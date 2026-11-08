@@ -19,9 +19,9 @@
 
 ## 安装
 
-1. 下载 VoiceSmith-Setup-<版本>.exe，以及运行环境分卷 `payload.7z.001` + `payload.7z.002`（三个文件放同一目录；程序会自动拼合并解压）
+1. 从 [Releases](https://github.com/DAKEZZ52/voicesmith/releases/latest) 下载安装包 `VoiceSmith-Setup-<版本>.exe`，以及运行环境分卷 `payload.7z.001` ~ `payload.7z.004`（共 5 个文件，放在同一目录）
 2. 双击安装（装到用户目录，不需要管理员）
-3. 首次启动会自动找 `payload.7z` 并解压运行环境
+3. 首次启动会自动按序拼合 4 个分卷、解压运行环境（约 8.6 GB，1 分钟左右）
 4. 首次启动会从 ModelScope 下载约 5.3 GB 预训练模型（只需一次）
 
 > 运行要求：Windows 10/11 x64、NVIDIA 显卡（CUDA 12 驱动）、≥6 GB 显存、安装后约 15 GB 磁盘。
