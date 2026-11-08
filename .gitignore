@@ -1,0 +1,7 @@
+node_modules/
+release/
+build/*.blockmap
+payload.7z
+payload-stage/
+*.log
+.DS_Store

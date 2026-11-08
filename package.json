@@ -1,0 +1,77 @@
+{
+  "name": "voicesmith",
+  "version": "1.0.0",
+  "description": "声匠 VoiceSmith —— 本地 AI 语音合成与音色微调桌面端",
+  "author": {
+    "name": "DAKEZZ52",
+    "email": "983064062@qq.com"
+  },
+  "license": "MIT",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "vite",
+    "build:web": "vite build",
+    "dist": "vite build && electron-builder --win --x64 --publish never",
+    "release": "vite build && electron-builder --win --x64 --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.4",
+    "electron": "43.7.1",
+    "electron-builder": "26.8.1",
+    "vite": "^6.4.5"
+  },
+  "build": {
+    "appId": "com.dakezz.voicesmith",
+    "productName": "声匠",
+    "executableName": "VoiceSmith",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/7zip-bin/win/x64/7za.exe",
+        "to": "7za.exe"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "DAKEZZ52",
+        "repo": "voicesmith"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "声匠",
+      "artifactName": "VoiceSmith-Setup-${version}.${ext}",
+      "deleteAppDataOnUninstall": false
+    },
+    "compression": "normal",
+    "asar": true
+  }
+}

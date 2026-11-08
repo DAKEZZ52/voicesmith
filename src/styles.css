@@ -1,0 +1,90 @@
+:root {
+  --bg: #111318;
+  --bg-soft: #171a20;
+  --panel: #1a1e25;
+  --panel-2: #20252d;
+  --line: #2a3038;
+  --line-soft: #232830;
+  --text: #e8ecf3;
+  --muted: #8b95a6;
+  --muted-2: #636d7d;
+  --accent: #ff8a3d;
+  --accent-soft: rgba(255, 138, 61, 0.12);
+  --accent-line: rgba(255, 138, 61, 0.45);
+  --ok: #45c8a0;
+  --err: #ff6b6b;
+  --radius: 14px;
+  --shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
+}
+
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+  font-size: 13.5px;
+  user-select: none;
+  overflow: hidden;
+}
+
+button {
+  font-family: inherit;
+  font-size: 13px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  padding: 9px 14px;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, transform .08s ease;
+}
+button:hover:not(:disabled) { background: #262c35; border-color: #39414d; }
+button:active:not(:disabled) { transform: translateY(1px); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary {
+  background: linear-gradient(180deg, #ff9a53, #f07f37);
+  border-color: #ff9a53;
+  color: #24150b;
+  font-weight: 700;
+  box-shadow: 0 10px 24px rgba(255, 138, 61, .22);
+}
+button.primary:hover:not(:disabled) { background: linear-gradient(180deg, #ffa867, #f28a45); }
+button.ghost { background: transparent; }
+
+input[type="text"], textarea, select {
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--text);
+  background: #12151a;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  outline: none;
+  user-select: text;
+}
+input[type="text"]:focus, textarea:focus, select:focus { border-color: var(--accent-line); }
+
+input[type="range"] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: #2b323c;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #1a1e25;
+  cursor: pointer;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #2c333d; border-radius: 8px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-track { background: transparent; }
+
+.mono { font-family: Consolas, "Cascadia Mono", monospace; }
+.muted { color: var(--muted); }
+.hint { color: var(--muted); font-size: 12px; line-height: 1.7; }
