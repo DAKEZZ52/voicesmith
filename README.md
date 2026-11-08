@@ -19,7 +19,7 @@
 
 ## 安装
 
-1. 下载 `VoiceSmith-Setup-<版本>.exe` 和 `payload.7z`（两个文件放同一目录）
+1. 下载 VoiceSmith-Setup-<版本>.exe，以及运行环境分卷 `payload.7z.001` + `payload.7z.002`（三个文件放同一目录；程序会自动拼合并解压）
 2. 双击安装（装到用户目录，不需要管理员）
 3. 首次启动会自动找 `payload.7z` 并解压运行环境
 4. 首次启动会从 ModelScope 下载约 5.3 GB 预训练模型（只需一次）

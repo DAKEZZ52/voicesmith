@@ -84,11 +84,12 @@ function writeConfig(patch) {
 // ---------- payload / models ----------
 
 function findPayloadArchive() {
-  const names = ['payload.7z', 'GPT-SoVITS-runtime.7z', 'runtime.7z'];
+  const names = ['payload.7z', 'payload.7z.001', 'GPT-SoVITS-runtime.7z', 'runtime.7z'];
   const saved = readConfig().payloadArchive;
   if (saved && fs.existsSync(saved)) return saved;
   const dirs = [
     path.dirname(app.getPath('exe')),
+    path.join(path.dirname(app.getPath('exe')), 'downloads'),
     process.resourcesPath,
     app.getPath('downloads'),
     app.getPath('desktop')
@@ -100,6 +101,32 @@ function findPayloadArchive() {
     }
   }
   return null;
+}
+
+// GitHub Release 单文件上限 2GB，运行环境按 payload.7z.001/.002 分卷分发，
+// 这里把分卷按序拼回一个完整 7z 再解压。
+async function joinPayloadParts(firstPart) {
+  const dir = path.dirname(firstPart);
+  const base = firstPart.replace(/\.001$/, '');
+  const parts = fs.readdirSync(dir)
+    .filter((f) => f.startsWith(path.basename(base) + '.') && /\.\d{3}$/.test(f))
+    .sort();
+  if (!parts.length) return firstPart;
+  const target = base;
+  log('合并运行时包分卷（' + parts.length + ' 个）…');
+  const out = fs.createWriteStream(target);
+  for (let i = 0; i < parts.length; i += 1) {
+    const file = path.join(dir, parts[i]);
+    await new Promise((resolve, reject) => {
+      const input = fs.createReadStream(file);
+      input.on('error', reject);
+      input.on('end', resolve);
+      input.pipe(out, { end: false });
+    });
+    send('install-progress', { percent: Math.round(((i + 1) / parts.length) * 100) });
+  }
+  await new Promise((resolve) => out.end(resolve));
+  return target;
 }
 
 function extractPayload(archive, dest) {
@@ -129,10 +156,11 @@ async function ensurePayload() {
     setPhase('need-payload');
     return false;
   }
+  const realArchive = /\.001$/.test(archive) ? await joinPayloadParts(archive) : archive;
   setPhase('installing');
   try {
-    await extractPayload(archive, payloadRoot());
-    writeConfig({ payloadArchive: archive });
+    await extractPayload(realArchive, payloadRoot());
+    writeConfig({ payloadArchive: realArchive });
   } catch (err) {
     lastError = String(err.message || err);
     setPhase('error', { error: lastError });
