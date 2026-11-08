@@ -51,6 +51,7 @@ function configFile() {
 
 // 从旧名字（gpt-sovits-desktop）的用户目录迁移参考音频与配置
 function migrateUserData() {
+  if (process.env.GSO_NO_MIGRATE === '1') return;
   try {
     const appData = app.getPath('appData');
     const oldDir = path.join(appData, 'gpt-sovits-desktop');
@@ -253,6 +254,14 @@ async function runSelfTest() {
   await new Promise((r) => setTimeout(r, 1500));
   const shotDir = path.join(app.getPath('temp'), 'gso-selftest');
   fs.mkdirSync(shotDir, { recursive: true });
+  try { mainWindow.setSize(1280, 1080); } catch (_) {}
+
+  const snap = async (name) => {
+    try {
+      const img = await mainWindow.webContents.capturePage();
+      fs.writeFileSync(path.join(shotDir, name), img.toPNG());
+    } catch (_) {}
+  };
 
   if (process.env.GSO_SHOT_TRAIN === '1') {
     try {
@@ -301,6 +310,9 @@ async function runSelfTest() {
       }
       return 'TIMEOUT';
     })()`);
+    try { await mainWindow.webContents.executeJavaScript((function(){const m=document.querySelector('.main'); if(m) m.scrollTop=320;})()); } catch (_) {}
+    await new Promise((r) => setTimeout(r, 500));
+    await snap('shot-single.png');
     log('SELFTEST: ' + out);
     console.log('SELFTEST_RESULT:' + out);
 
@@ -345,6 +357,7 @@ async function runSelfTest() {
       batchOk = wavs.length >= 1 && zipOk;
       batchInfo = out2 + ' wav=' + wavs.length + ' zip=' + (zipOk ? fs.statSync(zip).size + 'B' : 'missing');
       console.log('SELFTEST_BATCH:' + batchInfo);
+      await snap('shot-batch.png');
     }
 
     let trimOk = false;
@@ -383,6 +396,7 @@ async function runSelfTest() {
         try { return fs.readdirSync(path.join(app.getPath('userData'), 'refs')).filter((f) => f.endsWith('.wav')); } catch (_) { return []; }
       })();
       trimOk = refsFiles.length >= 1 && String(out3).includes('preview=yes');
+      await snap('shot-trim.png');
       trimInfo = out3 + ' files=' + refsFiles.length;
       console.log('SELFTEST_TRIM:' + trimInfo);
     }
