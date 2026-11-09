@@ -121,6 +121,20 @@ async function ensureModels(root, hooks = {}) {
   const totalBytes = items.reduce((s, it) => s + it.size, 0);
   let doneBytes = 0;
 
+  // 空间检查：下载 + 解压大约需要 2.5 倍体积
+  try {
+    const st = fs.statfsSync(root);
+    const free = st.bavail * st.bsize;
+    const need = totalBytes * 2.5;
+    if (free < need) {
+      onLog(`磁盘空间不足：需要约 ${(need / 1024 ** 3).toFixed(1)} GB，可用 ${(free / 1024 ** 3).toFixed(1)} GB`);
+      throw new Error(`磁盘空间不足：需要约 ${(need / 1024 ** 3).toFixed(1)} GB，当前可用 ${(free / 1024 ** 3).toFixed(1)} GB`);
+    }
+  } catch (err) {
+    if (String(err.message || err).indexOf('磁盘空间不足') >= 0) throw err;
+    // statfs 不支持时跳过检查
+  }
+
   const downloads = path.join(root, '.downloads');
   fs.mkdirSync(downloads, { recursive: true });
 

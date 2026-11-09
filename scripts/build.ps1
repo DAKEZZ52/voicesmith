@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 <#
     一键构建：整理 payload -> 压缩成 payload.7z -> 打 NSIS 安装包
     产物：

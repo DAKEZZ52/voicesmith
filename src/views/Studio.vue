@@ -1,12 +1,14 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import Train from './Train.vue';
+import Settings from './Settings.vue';
 
 const props = defineProps({ phase: { type: String, default: 'starting' } });
 
 const ready = ref(props.phase === 'ready');
 const voices = ref([]);
 const currentVoice = ref(null);
+const voiceApplied = ref(false);
 const refs = ref([]);
 const currentRef = ref(null);
 const refText = ref('');
@@ -20,7 +22,8 @@ const log = ref([]);
 const showLog = ref(false);
 
 // ---- 批量 ----
-const mode = ref(String(location.hash || '').indexOf('mode=train') >= 0 ? 'train' : 'single');
+const hashMode = (String(location.hash || '').match(/mode=(\w+)/) || [])[1];
+const mode = ref(['single', 'batch', 'train', 'settings'].includes(hashMode) ? hashMode : 'single');
 const queue = ref([]);
 const batchRunning = ref(false);
 const batchDir = ref('');
@@ -237,7 +240,13 @@ async function saveSelAsRef() {
 
 onMounted(async () => {
   window.api.on('phase', (p) => {
-    if (p.phase === 'ready') ready.value = true;
+    if (p.phase === 'ready') {
+      const first = !ready.value;
+      ready.value = true;
+      error.value = '';
+      // 服务刚就绪：把选中/首个音色应用到后端
+      if (first && voices.value.length && !voiceApplied) pickVoice(voices.value[0]);
+    }
   });
   window.api.on('log', (l) => {
     log.value.push(l);
@@ -267,7 +276,10 @@ onMounted(async () => {
 
   const v = await window.api.voices();
   voices.value = v.pairs || [];
-  if (voices.value.length) await pickVoice(voices.value[0]);
+  // 服务没就绪时不要调 /set_*_weights，否则会报 ECONNREFUSED；
+  // 等 phase=ready 事件到来再应用。
+  if (ready.value && voices.value.length) await pickVoice(voices.value[0]);
+  else if (voices.value.length) currentVoice.value = voices.value[0];
 
   const r = await window.api.refs();
   refs.value = r || [];
@@ -280,8 +292,16 @@ onUnmounted(() => clearInterval(timer));
 
 async function pickVoice(pair) {
   currentVoice.value = pair;
+  if (!ready.value) return; // 服务未就绪，等 ready 事件再应用
   const res = await window.api.selectVoice({ sovits: pair.sovits, gpt: pair.gpt });
-  if (!res.ok) error.value = '切换音色失败：' + res.error;
+  if (res.ok) {
+    voiceApplied.value = true;
+    return;
+  }
+  // 服务刚重启时的连接拒绝不弹窗，等 ready 后会自动重试
+  if (!/ECONNREFUSED|ECONNRESET/.test(res.error || '')) {
+    error.value = '切换音色失败：' + res.error;
+  }
 }
 
 async function reloadVoices() {
@@ -291,6 +311,25 @@ async function reloadVoices() {
   const still = cur && voices.value.find((p) => p.sovits === cur.sovits);
   if (still) return;
   if (voices.value.length) await pickVoice(voices.value[0]);
+}
+
+async function deleteRef(r) {
+  const res = await window.api.deleteRef({ path: r.path });
+  if (!res.ok) { error.value = res.error; return; }
+  refs.value = await window.api.refs();
+  if (currentRef.value && currentRef.value.path === r.path) {
+    selectRef(refs.value[0] || null);
+  }
+}
+
+async function tidyRefs() {
+  const res = await window.api.tidyRefs();
+  if (!res.ok) { error.value = res.error; return; }
+  refs.value = await window.api.refs();
+  if (!refs.value.find((x) => currentRef.value && x.path === currentRef.value.path)) {
+    selectRef(refs.value[0] || null);
+  }
+  error.value = '';
 }
 
 async function importRef() {
@@ -492,17 +531,25 @@ function replay(item) {
       <div class="section grow">
         <div class="section-head">
           参考音频
-          <button class="mini" @click="importRef">导入</button>
+          <span class="head-actions">
+            <button class="mini" @click="tidyRefs" :disabled="!refs.length">整理</button>
+            <button class="mini" @click="importRef">导入</button>
+          </span>
         </div>
         <div class="ref-list">
-          <button
+          <div
             v-for="r in refs" :key="r.path"
-            class="ref" :class="{ active: currentRef && currentRef.path === r.path }"
-            @click="selectRef(r)"
+            class="ref-row"
           >
-            <span class="ref-name">{{ r.name }}</span>
-            <span class="ref-state" :class="{ ok: r.text }">{{ r.text ? '已填词' : '缺参考文本' }}</span>
-          </button>
+            <button
+              class="ref" :class="{ active: currentRef && currentRef.path === r.path }"
+              @click="selectRef(r)" :title="r.text || '缺参考文本'"
+            >
+              <span class="ref-name">{{ r.name }}</span>
+              <span class="ref-state" :class="{ ok: r.text }">{{ r.text ? '已填词' : '缺词' }}</span>
+            </button>
+            <button class="ref-del" title="删除" @click.stop="deleteRef(r)">×</button>
+          </div>
           <div v-if="!refs.length" class="empty">还没有参考音频，点右上角「导入」</div>
         </div>
       </div>
@@ -528,12 +575,14 @@ function replay(item) {
           <button :class="{ on: mode === 'single' }" @click="mode = 'single'">单句</button>
           <button :class="{ on: mode === 'batch' }" @click="mode = 'batch'">批量</button>
           <button :class="{ on: mode === 'train' }" @click="mode = 'train'">训练</button>
+          <button :class="{ on: mode === 'settings' }" @click="mode = 'settings'">设置</button>
         </div>
         <div class="spacer"></div>
         <div class="muted mono" v-if="running">合成中 {{ elapsed }}s</div>
       </header>
 
       <Train v-if="mode === 'train'" @refresh="reloadVoices" />
+      <Settings v-else-if="mode === 'settings'" :voices-count="voices.length" />
 
       <template v-else>
 
@@ -737,6 +786,16 @@ function replay(item) {
 .voice.active .voice-dot { background: var(--accent); box-shadow: 0 0 10px rgba(255, 138, 61, .6); }
 .voice-name { flex: 1; font-size: 13px; }
 .voice-tag { font-size: 10.5px; color: var(--muted-2); }
+.ref-row { display: flex; align-items: center; gap: 2px; }
+.ref-row .ref { flex: 1; min-width: 0; }
+.ref-del {
+  flex: 0 0 22px; width: 22px; height: 22px; padding: 0; line-height: 1;
+  border-radius: 6px; background: transparent; border: 1px solid transparent;
+  color: var(--muted-2); opacity: 0; transition: opacity .12s ease, color .12s ease;
+}
+.ref-row:hover .ref-del { opacity: 1; }
+.ref-del:hover { color: var(--err); border-color: rgba(255,107,107,.35); background: rgba(255,107,107,.08); }
+.head-actions { display: flex; gap: 6px; }
 .ref-name { flex: 1; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ref-state { font-size: 10.5px; color: #c2703a; }
 .ref-state.ok { color: var(--ok); }

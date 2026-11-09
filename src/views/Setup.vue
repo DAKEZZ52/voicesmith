@@ -23,7 +23,7 @@ const title = computed(() => ({
 }[props.phase] || '准备中…'));
 
 const hint = computed(() => ({
-  'need-payload': '把随安装包下载的 payload.7z（约 3.3 GB）放在桌面或下载文件夹，程序会自动找到；也可以手动选择。',
+  'need-payload': '把 payload.7z，或分卷 payload.7z.001 ~ .004（共约 3.3 GB）放到桌面/下载文件夹，程序会自动找到并拼合；也可以手动选择 .001。',
   'need-models': '预训练模型约 5.32 GB，从 ModelScope 国内源下载，只需一次，之后离线可用。',
   error: props.error || '请查看下方日志。'
 }[props.phase] || ''));

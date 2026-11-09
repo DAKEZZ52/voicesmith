@@ -13,6 +13,7 @@ try { autoUpdater = require('electron-updater').autoUpdater; } catch (_) { /* �
 let updaterState = { status: 'idle', percent: 0, version: '', error: '' };
 
 const API_PORT = 9880;
+let apiPort = API_PORT;
 const DEV_URL = process.env.VITE_DEV_SERVER_URL || '';
 
 let mainWindow = null;
@@ -32,7 +33,17 @@ const setPhase = (p, extra) => {
 
 function payloadRoot() {
   if (process.env.GPT_SOVITS_PAYLOAD) return process.env.GPT_SOVITS_PAYLOAD;
-  return path.join(path.dirname(app.getPath('exe')), 'payload');
+  const beside = path.join(path.dirname(app.getPath('exe')), 'payload');
+  // 装到 Program Files 这类只读目录时，payload 写不进去 → 退到用户数据目录
+  try {
+    fs.mkdirSync(beside, { recursive: true });
+    const probe = path.join(beside, '.writable');
+    fs.writeFileSync(probe, '1');
+    fs.unlinkSync(probe);
+    return beside;
+  } catch (_) {
+    return path.join(app.getPath('userData'), 'payload');
+  }
 }
 const P = (rel) => path.join(payloadRoot(), rel);
 
@@ -113,6 +124,13 @@ async function joinPayloadParts(firstPart) {
     .filter((f) => f.startsWith(path.basename(base) + '.') && /\.\d{3}$/.test(f))
     .sort();
   if (!parts.length) return firstPart;
+  // 连续性检查：必须 001..NNN 一个不缺，否则拼出来的包必坏
+  for (let i = 0; i < parts.length; i += 1) {
+    const want = String(i + 1).padStart(3, '0');
+    if (parts[i].slice(-3) !== want) {
+      throw new Error(`分卷不完整：缺少 ${path.basename(base)}.${want}（现有 ${parts.join(', ')}）`);
+    }
+  }
   const target = base;
   log('合并运行时包分卷（' + parts.length + ' 个）…');
   const out = fs.createWriteStream(target);
@@ -177,9 +195,26 @@ async function ensurePayload() {
 
 // ---------- python api ----------
 
+function portFree(port) {
+  return new Promise((resolve) => {
+    const net = require('net');
+    const srv = net.createServer();
+    srv.once('error', () => resolve(false));
+    srv.once('listening', () => srv.close(() => resolve(true)));
+    srv.listen(port, '127.0.0.1');
+  });
+}
+
+async function pickApiPort() {
+  for (let p = API_PORT; p < API_PORT + 20; p += 1) {
+    if (await portFree(p)) return p;
+  }
+  return API_PORT;
+}
+
 function apiOnline() {
   return new Promise((resolve) => {
-    const req = http.get({ host: '127.0.0.1', port: API_PORT, path: '/openapi.json', timeout: 800 }, (res) => {
+    const req = http.get({ host: '127.0.0.1', port: apiPort, path: '/openapi.json', timeout: 800 }, (res) => {
       res.resume();
       resolve(res.statusCode === 200);
     });
@@ -198,9 +233,26 @@ async function waitApi(timeoutMs) {
   return false;
 }
 
+// 运行环境的 python 选择：
+// uv 建的 venv 里 Scripts\python.exe 是个 46KB 的启动器，里面写死了创建时的绝对路径，
+// 整个目录搬到别处后它会去找旧路径（甚至旧机器上的 .python）。
+// 所以优先用 payload 自带的 base python + PYTHONPATH 指向 venv 的 site-packages，完全可搬移。
+function pythonRuntime(root) {
+  const baseExe = path.join(root, '.python', 'cpython-3.12-windows-x86_64-none', 'python.exe');
+  const venvExe = path.join(root, 'runtime', 'Scripts', 'python.exe');
+  const site = path.join(root, 'runtime', 'Lib', 'site-packages');
+  const useBase = fs.existsSync(baseExe) && fs.existsSync(site);
+  return {
+    exe: useBase ? baseExe : venvExe,
+    useBase,
+    site
+  };
+}
+
 function startApi() {
   const root = payloadRoot();
-  const py = path.join(root, 'runtime', 'Scripts', 'python.exe');
+  const rt = pythonRuntime(root);
+  const py = rt.exe;
   const dict = path.join(process.env.LOCALAPPDATA || root, 'GPT-SoVITS', 'open_jtalk_dic_utf_8-1.11');
   const env = Object.assign({}, process.env, {
     PATH: path.join(root, 'runtime') + ';' + process.env.PATH,
@@ -208,8 +260,9 @@ function startApi() {
     PYTHONIOENCODING: 'utf-8',
     PYTHONUNBUFFERED: '1'
   });
+  if (rt.useBase) env.PYTHONPATH = rt.site;
   log('启动 TTS 服务…');
-  apiProc = spawn(py, ['-s', 'api_v2.py', '-c', 'GPT_SoVITS/configs/tts_infer.yaml', '-p', String(API_PORT)],
+  apiProc = spawn(py, ['-s', 'api_v2.py', '-c', 'GPT_SoVITS/configs/tts_infer.yaml', '-p', String(apiPort)],
     { cwd: root, env, windowsHide: true });
   apiProc.stdout.setEncoding('utf8');
   apiProc.stderr.setEncoding('utf8');
@@ -235,6 +288,8 @@ async function boot() {
     setPhase('need-models');
     return;
   }
+  // 9880 被占用时换一个空闲端口，避免把别人的服务当成自己的
+  apiPort = await pickApiPort();
   if (await apiOnline()) {
     setPhase('ready');
     return;
@@ -263,18 +318,21 @@ async function runSelfTest() {
     } catch (_) {}
   };
 
-  if (process.env.GSO_SHOT_TRAIN === '1') {
+  if (process.env.GSO_SHOT_MODE || process.env.GSO_SHOT_TRAIN === '1') {
     try {
+      const labelMap = { single: '单句', batch: '批量', train: '训练', settings: '设置' };
+      const want = labelMap[process.env.GSO_SHOT_MODE || 'train'] || '训练';
       await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = (ms) => new Promise(r => setTimeout(r, ms));
-        const tab = [...document.querySelectorAll('.seg button')].find(b => b.textContent.trim() === '训练');
+        const tab = [...document.querySelectorAll('.seg button')].find(b => b.textContent.trim() === '${want}');
         if (tab) tab.click();
         await wait(1500);
         return 'ok';
       })()`);
       const img = await mainWindow.webContents.capturePage();
-      fs.writeFileSync(path.join(shotDir, 'shot-train.png'), img.toPNG());
-      console.log('SELFTEST_SHOT:train');
+      const shotName = 'shot-' + (process.env.GSO_SHOT_MODE || 'train') + '.png';
+      fs.writeFileSync(path.join(shotDir, shotName), img.toPNG());
+      console.log('SELFTEST_SHOT:' + shotName);
     } catch (err) {
       console.log('SELFTEST_SHOT:fail ' + err);
     }
@@ -521,9 +579,56 @@ function writeRefs(list) {
   } catch (_) {}
 }
 
+// 参考音频去重 + 规范命名（参考01-4.7s.wav）。外部文件先复制进来，不动原文件。
+function normalizeRefs(list) {
+  const dir = refsDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const seen = new Set();
+  const kept = [];
+  for (const r of list) {
+    let h = '';
+    try { h = require('crypto').createHash('sha1').update(fs.readFileSync(r.path)).digest('hex'); } catch (_) {}
+    if (h && seen.has(h)) continue;
+    if (h) seen.add(h);
+    let cur = r.path;
+    if (!path.resolve(cur).toLowerCase().startsWith(path.resolve(dir).toLowerCase())) {
+      const copy = path.join(dir, `.import-${Date.now()}-${kept.length}.wav`);
+      try { fs.copyFileSync(cur, copy); cur = copy; } catch (_) {}
+    }
+    kept.push({ path: cur, text: r.text || '' });
+  }
+  // 两阶段改名，避免互相覆盖
+  const tmp = kept.map((r, i) => {
+    const t = path.join(dir, `.stage-${i}.wav`);
+    try { if (path.resolve(r.path) !== path.resolve(t)) fs.renameSync(r.path, t); } catch (_) { return r.path; }
+    return t;
+  });
+  const out = tmp.map((p, i) => {
+    const dur = wavSeconds(p).toFixed(1);
+    const name = `参考${String(i + 1).padStart(2, '0')}-${dur}s`;
+    const target = path.join(dir, name + '.wav');
+    let finalPath = p;
+    try {
+      if (fs.existsSync(target)) fs.unlinkSync(target);
+      fs.renameSync(p, target);
+      finalPath = target;
+    } catch (_) {}
+    return { name: path.basename(finalPath, '.wav'), path: finalPath, text: kept[i].text };
+  });
+  writeRefs(out);
+  return out;
+}
+
 function seedRefs() {
-  const list = readRefs();
-  if (list.length) return list;
+  let list = readRefs();
+  if (list.length) {
+    // 旧版本会生成 参考1_xxx_5.9s_clip_4.7s 这类名字，启动时自动整理一次
+    const dirty = list.some((r) => /_clip|参考\d+_/i.test(r.name || ''));
+    if (dirty) {
+      try { list = normalizeRefs(list); } catch (_) {}
+    }
+    return list;
+  }
   const seedDir = P('output/参考音频');
   if (!fs.existsSync(seedDir)) return list;
   const texts = {
@@ -546,7 +651,7 @@ function postTts(body) {
   return new Promise((resolve, reject) => {
     const data = Buffer.from(JSON.stringify(body), 'utf8');
     const req = http.request({
-      host: '127.0.0.1', port: API_PORT, path: '/tts', method: 'POST',
+      host: '127.0.0.1', port: apiPort, path: '/tts', method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': data.length },
       timeout: 180000
     }, (res) => {
@@ -569,7 +674,7 @@ function postTts(body) {
 // ---------- ipc ----------
 
 ipcMain.handle('state', () => ({
-  phase, error: lastError, payload: payloadRoot(), apiPort: API_PORT,
+  phase, error: lastError, payload: payloadRoot(), apiPort: apiPort,
   hasModels: payloadReady() ? hasAllModels(payloadRoot()) : false,
   testTrainDir: process.env.GSO_TRAIN_DIR || '',
   version: app.getVersion()
@@ -587,7 +692,7 @@ ipcMain.handle('open-output', () => {
 ipcMain.handle('pick-payload', async () => {
   const r = await dialog.showOpenDialog(mainWindow, {
     title: '选择运行时包（payload.7z）', properties: ['openFile'],
-    filters: [{ name: '7z 压缩包', extensions: ['7z'] }]
+    filters: [{ name: '运行时包', extensions: ['7z', '001'] }]
   });
   if (r.canceled || !r.filePaths.length) return { ok: false };
   setPhase('installing');
@@ -643,7 +748,7 @@ ipcMain.handle('update-ref-text', (_e, { path: p, text }) => {
 
 ipcMain.handle('select-voice', async (_e, { sovits, gpt }) => {
   const get = (p) => new Promise((resolve, reject) => {
-    http.get({ host: '127.0.0.1', port: API_PORT, path: p, timeout: 60000 }, (res) => {
+    http.get({ host: '127.0.0.1', port: apiPort, path: p, timeout: 60000 }, (res) => {
       const c = [];
       res.on('data', (d) => c.push(d));
       res.on('end', () => resolve({ code: res.statusCode, body: Buffer.concat(c).toString('utf8') }));
@@ -701,8 +806,7 @@ ipcMain.handle('tts', async (_e, opts) => {
     if (!buf) throw new Error(lastWhy + '：换个说法或再点一次');
     const outDir = path.join(payloadRoot(), 'output');
     fs.mkdirSync(outDir, { recursive: true });
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const file = path.join(outDir, 'tts_' + stamp + '.wav');
+    const file = path.join(outDir, outputName(String(opts.text || '')));
     fs.writeFileSync(file, buf);
     return {
       ok: true, base64: buf.toString('base64'), path: file,
@@ -750,6 +854,135 @@ ipcMain.handle('trim-ref', async (_e, { src, start, end, name, save }) => {
       return { ok: true, item, base64: fs.readFileSync(out).toString('base64') };
     }
     return { ok: true, base64: fs.readFileSync(out).toString('base64') };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+});
+
+// 输出文件命名：<文本前 12 字>_<MMdd-HHmm>.wav，重名自动加序号
+function stampShort(d = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+function outputName(text) {
+  const clean = String(text || '')
+    .replace(/[\s\u3000]+/g, '')
+    .replace(/[\\/:*?"<>|\r\n\t]/g, '')
+    .replace(/[，。！？、；：""''（）《》…—]/g, '')
+    .slice(0, 12) || '合成';
+  const base = `${clean}_${stampShort()}`;
+  const dir = path.join(payloadRoot(), 'output');
+  let name = base + '.wav';
+  let i = 2;
+  while (fs.existsSync(path.join(dir, name))) {
+    name = `${base}-${i}.wav`;
+    i += 1;
+  }
+  return name;
+}
+
+// ---------- 参考音频管理 ----------
+
+function wavSeconds(file) {
+  try { return Math.max(0, (fs.statSync(file).size - 44)) / (32000 * 2); } catch (_) { return 0; }
+}
+
+function safeBase(name) {
+  return String(name || 'ref')
+    .replace(/_clip(?:_.*)?$/i, '')
+    .replace(/\.wav$/i, '')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .slice(0, 40);
+}
+
+ipcMain.handle('refs:delete', (_e, { path: p }) => {
+  try {
+    const list = readRefs().filter((r) => r.path !== p);
+    writeRefs(list);
+    try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (_) {}
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+});
+
+// 去重 + 规范命名：参考01-4.7s.wav / 参考02-5.9s.wav …
+ipcMain.handle('refs:tidy', () => {
+  try {
+    const before = readRefs().length;
+    const list = normalizeRefs(readRefs());
+    return { ok: true, list, total: before, kept: list.length };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+});
+
+// ---------- 模型 / 生成记录 ----------
+
+ipcMain.handle('models:list', () => {
+  const root = payloadRoot();
+  const out = [];
+  for (const dirName of fs.existsSync(root) ? fs.readdirSync(root) : []) {
+    if (!/^(SoVITS|GPT)_weights/.test(dirName)) continue;
+    const dir = path.join(root, dirName);
+    let st;
+    try { st = fs.statSync(dir); } catch (_) { continue; }
+    if (!st.isDirectory()) continue;
+    for (const f of fs.readdirSync(dir)) {
+      if (!/\.(pth|ckpt)$/i.test(f)) continue;
+      const full = path.join(dir, f);
+      const s = fs.statSync(full);
+      out.push({
+        dir: dirName,
+        file: f,
+        path: full,
+        kind: dirName.startsWith('SoVITS') ? 'sovits' : 'gpt',
+        sizeMB: +(s.size / 1048576).toFixed(1),
+        mtime: s.mtime.toISOString()
+      });
+    }
+  }
+  out.sort((a, b) => (a.mtime < b.mtime ? 1 : -1));
+  return out;
+});
+
+ipcMain.handle('models:delete', (_e, { path: p }) => {
+  try {
+    if (!/weights/i.test(p)) throw new Error('路径不在权重目录内');
+    fs.unlinkSync(p);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+});
+
+ipcMain.handle('outputs:list', () => {
+  const root = path.join(payloadRoot(), 'output');
+  const out = [];
+  if (!fs.existsSync(root)) return out;
+  const push = (file, group) => {
+    try {
+      const s = fs.statSync(file);
+      out.push({ path: file, name: path.basename(file), group, sizeMB: +(s.size / 1048576).toFixed(2), mtime: s.mtime.toISOString(), dur: +wavSeconds(file).toFixed(2) });
+    } catch (_) {}
+  };
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith('.wav')) push(path.join(root, entry.name), '单句');
+    if (entry.isDirectory() && entry.name.startsWith('batch_')) {
+      const dir = path.join(root, entry.name);
+      for (const f of fs.readdirSync(dir)) if (f.endsWith('.wav')) push(path.join(dir, f), entry.name.replace('batch_', '批量 '));
+    }
+  }
+  out.sort((a, b) => (a.mtime < b.mtime ? 1 : -1));
+  return out;
+});
+
+ipcMain.handle('outputs:delete', (_e, { path: p }) => {
+  try {
+    if (!/\\output\\/i.test(p)) throw new Error('路径不在输出目录内');
+    fs.unlinkSync(p);
+    return { ok: true };
   } catch (err) {
     return { ok: false, error: String(err.message || err) };
   }
@@ -806,8 +1039,7 @@ ipcMain.handle('batch-cancel', () => { batchCancel = true; return true; });
 ipcMain.handle('batch-run', async (_e, opts) => {
   batchCancel = false;
   const items = opts.items || [];
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const dir = path.join(payloadRoot(), 'output', 'batch_' + stamp);
+  const dir = path.join(payloadRoot(), 'output', 'batch_' + stampShort());
   fs.mkdirSync(dir, { recursive: true });
   const results = [];
 
@@ -827,7 +1059,11 @@ ipcMain.handle('batch-run', async (_e, opts) => {
       try {
         const buf = await synthOne(Object.assign({}, opts, { text: item.text, seed }));
         if (buf.length < 2000 || wavRms(buf) < 0.003) throw new Error('模型没发声（这句换种说法再试）');
-        const file = path.join(dir, String(idx + 1).padStart(3, '0') + '_' + (item.text.slice(0, 8) || 'audio') + '.wav');
+        const label = String(item.text || '')
+          .replace(/[\s\u3000]+/g, '')
+          .replace(/[\\/:*?"<>|\r\n\t，。！？、；：""''（）《》…—]/g, '')
+          .slice(0, 12) || 'audio';
+        const file = path.join(dir, String(idx + 1).padStart(3, '0') + '_' + label + '.wav');
         fs.writeFileSync(file, buf);
         const rec = { index: idx, ok: true, path: file, bytes: buf.length, dur: wavDuration(buf), elapsed: ((Date.now() - t0) / 1000).toFixed(1) };
         results.push(rec);
@@ -887,7 +1123,8 @@ function yamlStr(s) {
 function runPy(args, env, onLine) {
   return new Promise((resolve) => {
     const root = payloadRoot();
-    const py = path.join(root, 'runtime', 'Scripts', 'python.exe');
+    const rt = pythonRuntime(root);
+    const py = rt.exe;
     const e = Object.assign({}, process.env, {
       PATH: path.join(root, 'runtime') + ';' + process.env.PATH,
       PYTHONIOENCODING: 'utf-8',
@@ -895,6 +1132,7 @@ function runPy(args, env, onLine) {
       NLTK_DATA: path.join(root, 'runtime', 'nltk_data'),
       OPEN_JTALK_DICT_DIR: path.join(process.env.LOCALAPPDATA || root, 'GPT-SoVITS', 'open_jtalk_dic_utf_8-1.11')
     }, env || {});
+    if (rt.useBase) e.PYTHONPATH = rt.site;
     const p = spawn(py, args, { cwd: root, env: e, windowsHide: true });
     trainProc = p;
     let out = '';
@@ -1277,7 +1515,9 @@ function createWindow() {
   });
 
   if (DEV_URL) mainWindow.loadURL(DEV_URL);
-  else if (process.env.GSO_SHOT_TRAIN === '1') {
+  else if (process.env.GSO_SHOT_MODE) {
+    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'mode=' + process.env.GSO_SHOT_MODE });
+  } else if (process.env.GSO_SHOT_TRAIN === '1') {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'mode=train' });
   } else mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
 
