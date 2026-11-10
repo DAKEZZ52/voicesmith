@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('api', {
   bookStart: (payload) => ipcRenderer.invoke('book:start', payload),
   bookStop: () => ipcRenderer.invoke('book:stop'),
   bookList: () => ipcRenderer.invoke('book:list'),
+  bookDetail: (payload) => ipcRenderer.invoke('book:detail', payload),
+  bookResume: (payload) => ipcRenderer.invoke('book:resume', payload),
   bookState: () => ipcRenderer.invoke('book:state'),
   updaterState: () => ipcRenderer.invoke('updater:state'),
   updaterCheck: () => ipcRenderer.invoke('updater:check'),

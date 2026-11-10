@@ -17,6 +17,8 @@ const exportInfo = ref(null);
 const error = ref('');
 const logs = ref([]);
 const history = ref([]);
+const detail = ref(null);
+const redeeming = ref(-1);
 const gapSec = ref(0.6);
 const speed = ref(1);
 const maxChars = ref(3000);
@@ -122,6 +124,54 @@ async function refreshHistory() {
   history.value = await window.api.bookList();
 }
 
+async function ctx() {
+  const voice = await window.api.voices();
+  const cur = (voice.pairs || [])[0] || null;
+  const refs = await window.api.refs();
+  const ref = refs && refs.length ? refs[0] : null;
+  if (!cur || !ref) throw new Error('缺少音色或参考音频');
+  return {
+    voice: { sovits: cur.sovits, gpt: cur.gpt, name: cur.name },
+    ref: { path: ref.path, text: ref.text || '' }
+  };
+}
+
+async function toggleDetail(b) {
+  if (detail.value && detail.value.dir === b.dir) { detail.value = null; return; }
+  const d = await window.api.bookDetail({ dir: b.dir });
+  if (!d.ok) { error.value = d.error; return; }
+  detail.value = Object.assign({ dir: b.dir }, d);
+}
+
+async function redoChapter(ch) {
+  if (!detail.value) return;
+  if (!props.ready) { error.value = '服务还没就绪'; return; }
+  error.value = '';
+  redeeming.value = ch.index;
+  try {
+    const c = await ctx();
+    running.value = true;
+    done.value = 0;
+    total.value = ch.sentences;
+    const res = await window.api.bookResume({
+      dir: detail.value.dir, onlyChapter: ch.index,
+      voice: c.voice, ref: c.ref, gapSec: Number(detail.value.gap) || 0
+    });
+    if (!res.ok) error.value = res.error;
+    else if (res.failures && res.failures.length) error.value = `该章有 ${res.failures.length} 句失败`;
+  } catch (e) {
+    error.value = String(e.message || e);
+  } finally {
+    running.value = false;
+    redeeming.value = -1;
+    await refreshHistory();
+    if (detail.value) {
+      const d = await window.api.bookDetail({ dir: detail.value.dir });
+      if (d.ok) detail.value = Object.assign({ dir: detail.value.dir }, d);
+    }
+  }
+}
+
 function openOutput() { window.api.openOutput(); }
 
 async function openBook(b) {
@@ -196,9 +246,28 @@ async function openBook(b) {
           <span class="name">{{ b.name }}</span>
           <span class="meta">{{ b.chapters }} 章</span>
           <span class="meta mono">{{ b.mtime.slice(5, 16).replace('T', ' ') }}</span>
+          <button class="mini" @click="toggleDetail(b)">{{ detail && detail.dir === b.dir ? '收起' : '展开' }}</button>
           <button class="mini" @click="openBook(b)">{{ b.m4a ? '打开 m4a' : '打开目录' }}</button>
         </div>
         <div v-if="!history.length" class="empty">还没有生成过有声书</div>
+      </div>
+
+      <div v-if="detail" class="detail">
+        <div class="detail-head">
+          <b>{{ detail.name }}</b>
+          <span class="muted">{{ detail.chapters.length }} 章 · 点「重做」只重新合成该章并刷新 m4a</span>
+        </div>
+        <div class="chapter-list">
+          <div v-for="c in detail.chapters" :key="c.index" class="chapter-row" :class="{ done: c.hasWav }">
+            <span class="idx">{{ String(c.index + 1).padStart(2, '0') }}</span>
+            <span class="title">{{ c.title }}</span>
+            <span class="meta">{{ c.sentences }} 句</span>
+            <span class="state">{{ c.hasWav ? '已生成' : '未生成' }}</span>
+            <button class="mini" :disabled="running" @click="redoChapter(c)">
+              {{ redeeming === c.index ? '重做中…' : '重做' }}
+            </button>
+          </div>
+        </div>
       </div>
     </section>
   </div>
@@ -213,6 +282,10 @@ async function openBook(b) {
 .book-text { width: 100%; min-height: 180px; max-height: 300px; resize: vertical; background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; color: var(--text); padding: 12px 14px; font-size: 13px; line-height: 1.7; }
 .meta-row { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11.5px; color: var(--muted-2); }
 .num { width: 64px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 7px; color: var(--text); padding: 3px 6px; font-size: 12px; }
+.detail { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+.detail-head { display: flex; align-items: center; gap: 10px; font-size: 12.5px; margin-bottom: 8px; }
+.detail-head .muted { font-size: 11px; }
+.chapter-row .state { width: 52px; }
 .chapter-list { max-height: 240px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
 .chapter-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; border: 1px solid transparent; font-size: 12.5px; }
 .chapter-row:hover { background: #1d222a; }

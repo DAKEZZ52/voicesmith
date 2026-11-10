@@ -1,6 +1,6 @@
 'use strict';
 // 音频书：长文分章 → 逐句合成（可续跑）→ 合并成带章节的 m4a
-// 依赖主进程注入：payloadRoot / log / send / synthOne / setVoice / app
+// 支持按章重做（book:resume + onlyChapter）
 
 const fs = require('fs');
 const path = require('path');
@@ -11,8 +11,9 @@ module.exports = function initBook(deps) {
 
   let cancel = false;
   let running = false;
-  let current = null; // { dir, name }
+  let current = null;
 
+  const pad3 = (n) => String(n).padStart(3, '0');
   const wavDur = (file) => {
     try { return Math.max(0, (fs.statSync(file).size - 44)) / (32000 * 2); } catch (_) { return 0; }
   };
@@ -93,7 +94,6 @@ module.exports = function initBook(deps) {
   }
 
   async function makeSilence(file, seconds) {
-    if (seconds <= 0) return null;
     const r = await run(ffmpeg(), ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'anullsrc=r=32000:cl=mono', '-t', String(seconds), '-c:a', 'pcm_s16le', file]);
     return r.code === 0 ? file : null;
   }
@@ -106,43 +106,114 @@ module.exports = function initBook(deps) {
     return r.code === 0;
   }
 
-  async function buildM4a(wavFiles, titles, gaps, outM4a) {
-    const tmpDir = path.dirname(outM4a);
-    const gapFile = path.join(tmpDir, '.gap.wav');
-    await makeSilence(gapFile, gaps);
-    // 拼接：章之间插入静音
-    const parts = [];
-    wavFiles.forEach((f, i) => {
-      parts.push(f);
-      if (i < wavFiles.length - 1 && gaps > 0) parts.push(gapFile);
+  // 用目录里现有的 chapter_*.wav 重新导出 m4a（含章节）
+  async function exportBook(dir, name, gap) {
+    const files = fs.readdirSync(dir).filter((f) => /^chapter_\d{3}\.wav$/.test(f)).sort();
+    if (!files.length) return '';
+    const metaFile = path.join(dir, 'book.json');
+    let meta = {};
+    try { meta = JSON.parse(fs.readFileSync(metaFile, 'utf8')); } catch (_) {}
+    const titles = files.map((f, i) => {
+      const idx = Number(f.slice(8, 11)) - 1;
+      const ch = (meta.chapters || [])[idx];
+      return ch ? ch.title : `第 ${idx + 1} 章`;
     });
-    const fullWav = path.join(tmpDir, 'full.wav');
-    const ok = await concatWavs(parts, fullWav);
-    if (!ok) throw new Error('章节合并失败');
 
-    // 章节元数据
+    const gapFile = path.join(dir, '.gap.wav');
+    if (gap > 0) await makeSilence(gapFile, gap);
+    const parts = [];
+    files.forEach((f, i) => {
+      parts.push(path.join(dir, f));
+      if (i < files.length - 1 && gap > 0) parts.push(gapFile);
+    });
+    const fullWav = path.join(dir, 'full.wav');
+    if (!(await concatWavs(parts, fullWav))) throw new Error('章节合并失败');
+
     let t = 0;
-    const meta = [';FFMETADATA1'];
-    for (let i = 0; i < wavFiles.length; i += 1) {
-      const d = wavDur(wavFiles[i]);
-      const start = Math.round(t * 1000);
-      const end = Math.round((t + d) * 1000);
-      meta.push('[CHAPTER]', 'TIMEBASE=1/1000', `START=${start}`, `END=${end}`, `title=${titles[i]}`);
-      t += d + gaps;
+    const metaLines = [';FFMETADATA1'];
+    for (let i = 0; i < files.length; i += 1) {
+      const d = wavDur(path.join(dir, files[i]));
+      metaLines.push('[CHAPTER]', 'TIMEBASE=1/1000', `START=${Math.round(t * 1000)}`, `END=${Math.round((t + d) * 1000)}`, `title=${titles[i]}`);
+      t += d + gap;
     }
-    const metaFile = path.join(tmpDir, 'chapters.txt');
-    fs.writeFileSync(metaFile, meta.join('\n'), 'utf8');
+    const metaTxt = path.join(dir, 'chapters.txt');
+    fs.writeFileSync(metaTxt, metaLines.join('\n'), 'utf8');
 
-    const plain = path.join(tmpDir, 'plain.m4a');
+    const plain = path.join(dir, 'plain.m4a');
     let r = await run(ffmpeg(), ['-y', '-v', 'error', '-i', fullWav, '-c:a', 'aac', '-b:a', '96k', plain]);
     if (r.code !== 0) throw new Error('转码失败: ' + r.err);
-    r = await run(ffmpeg(), ['-y', '-v', 'error', '-i', plain, '-i', metaFile, '-map_metadata', '1', '-map', '0:a', '-c', 'copy', outM4a]);
+    const out = path.join(dir, `${slug(name || meta.name || 'book')}.m4a`);
+    r = await run(ffmpeg(), ['-y', '-v', 'error', '-i', plain, '-i', metaTxt, '-map_metadata', '1', '-map', '0:a', '-c', 'copy', out]);
     if (r.code !== 0) throw new Error('写入章节失败: ' + r.err);
-    try { fs.unlinkSync(plain); fs.unlinkSync(fullWav); fs.unlinkSync(metaFile); fs.unlinkSync(gapFile); } catch (_) {}
-    return true;
+    try { fs.unlinkSync(plain); fs.unlinkSync(fullWav); fs.unlinkSync(metaTxt); fs.unlinkSync(gapFile); } catch (_) {}
+    return out;
   }
 
-  // ---------- IPC ----------
+  // 逐章逐句合成；idxs 指定只跑哪几章
+  async function runChapters(ctx) {
+    const { dir, chapters, idxs, params, ref, partsRoot } = ctx;
+    const failures = [];
+    let doneSentences = 0;
+    const totalSentences = idxs.reduce((s, i) => s + chapters[i].sentences.length, 0);
+
+    for (const ci of idxs) {
+      if (cancel) break;
+      const ch = chapters[ci];
+      const chDir = path.join(partsRoot, pad3(ci));
+      fs.mkdirSync(chDir, { recursive: true });
+      send('book:chapter', { index: ci, title: ch.title, status: 'running', sentences: ch.sentences.length });
+
+      const files = [];
+      for (let si = 0; si < ch.sentences.length; si += 1) {
+        if (cancel) break;
+        const sent = ch.sentences[si];
+        const file = path.join(chDir, String(si).padStart(4, '0') + '.wav');
+        if (fs.existsSync(file) && fs.statSync(file).size > 2000) {
+          files.push(file);
+          doneSentences += 1;
+          send('book:progress', { done: doneSentences, total: totalSentences, text: sent, skipped: true });
+          continue;
+        }
+        let ok = false;
+        let lastErr = '';
+        for (const seed of [666, 2024, 1234, 8888]) {
+          if (cancel) break;
+          try {
+            const buf = await synthOne(Object.assign({}, params || {}, { text: sent, refPath: ref.path, refText: ref.text, seed }));
+            if (buf.length < 2000) throw new Error('没发声');
+            fs.writeFileSync(file, buf);
+            files.push(file);
+            ok = true;
+            break;
+          } catch (err) {
+            lastErr = String(err.message || err);
+          }
+        }
+        doneSentences += 1;
+        if (!ok) {
+          failures.push({ chapter: ch.title, text: sent, error: lastErr });
+          log(`音频书：跳过一句（${ch.title}）：${sent.slice(0, 20)}… ${lastErr}`);
+        }
+        send('book:progress', { done: doneSentences, total: totalSentences, text: sent, ok });
+      }
+
+      if (files.length) {
+        const chWav = path.join(dir, `chapter_${pad3(ci + 1)}.wav`);
+        const okConcat = await concatWavs(files, chWav);
+        send('book:chapter', { index: ci, title: ch.title, status: okConcat ? 'done' : 'failed' });
+      } else {
+        send('book:chapter', { index: ci, title: ch.title, status: 'failed' });
+      }
+    }
+    return { failures, doneSentences, totalSentences };
+  }
+
+  async function prepare(dir, voice) {
+    if (voice && voice.sovits) {
+      const v = await setVoice(voice.sovits, voice.gpt);
+      if (!v.ok) throw new Error('切换音色失败: ' + v.error);
+    }
+  }
 
   function register(ipcMain) {
     ipcMain.handle('book:parse', (_e, { text, maxChars }) => {
@@ -154,110 +225,82 @@ module.exports = function initBook(deps) {
       }
     });
 
-    ipcMain.handle('book:state', () => ({ running, cancel: false, dir: current ? current.dir : '' }));
+    ipcMain.handle('book:state', () => ({ running, dir: current ? current.dir : '' }));
 
-    ipcMain.handle('book:stop', () => {
-      cancel = true;
-      log('音频书：收到停止请求');
-      return { ok: true };
-    });
+    ipcMain.handle('book:stop', () => { cancel = true; log('音频书：收到停止请求'); return { ok: true }; });
 
     ipcMain.handle('book:start', async (_e, opts) => {
       if (running) return { ok: false, error: '已有任务在跑' };
       const chapters = opts.chapters || [];
       if (!chapters.length) return { ok: false, error: '没有章节' };
-
-      running = true;
-      cancel = false;
-      const gap = Number(opts.gapSec) || 0.4;
+      running = true; cancel = false;
+      const gap = Number(opts.gapSec) || 0;
       const dir = path.join(payloadRoot(), 'output', `audiobook_${slug(opts.name)}-${stamp()}`);
       const partsRoot = path.join(dir, 'parts');
       fs.mkdirSync(partsRoot, { recursive: true });
-      current = { dir, name: opts.name };
+      current = { dir };
       fs.writeFileSync(path.join(dir, 'book.json'), JSON.stringify({ name: opts.name, chapters, params: opts.params, gap }, null, 2), 'utf8');
-
       try {
-        if (opts.voice && opts.voice.sovits) {
-          const v = await setVoice(opts.voice.sovits, opts.voice.gpt);
-          if (!v.ok) throw new Error('切换音色失败: ' + v.error);
-        }
-
-        const chapterWavs = [];
-        const titles = [];
-        let doneSentences = 0;
-        const totalSentences = chapters.reduce((s, c) => s + c.sentences.length, 0);
-        const failures = [];
-
-        for (let ci = 0; ci < chapters.length; ci += 1) {
-          if (cancel) break;
-          const ch = chapters[ci];
-          const chDir = path.join(partsRoot, String(ci).padStart(3, '0'));
-          fs.mkdirSync(chDir, { recursive: true });
-          send('book:chapter', { index: ci, title: ch.title, status: 'running', sentences: ch.sentences.length });
-
-          const files = [];
-          for (let si = 0; si < ch.sentences.length; si += 1) {
-            if (cancel) break;
-            const sent = ch.sentences[si];
-            const file = path.join(chDir, String(si).padStart(4, '0') + '.wav');
-            if (fs.existsSync(file) && fs.statSync(file).size > 2000) {
-              files.push(file);
-              doneSentences += 1;
-              send('book:progress', { done: doneSentences, total: totalSentences, text: sent, skipped: true });
-              continue;
-            }
-            let ok = false;
-            let lastErr = '';
-            for (const seed of [666, 2024, 1234, 8888]) {
-              if (cancel) break;
-              try {
-                const buf = await synthOne(Object.assign({}, opts.params || {}, { text: sent, refPath: opts.ref.path, refText: opts.ref.text, seed }));
-                if (buf.length < 2000) throw new Error('没发声');
-                fs.writeFileSync(file, buf);
-                files.push(file);
-                ok = true;
-                break;
-              } catch (err) {
-                lastErr = String(err.message || err);
-              }
-            }
-            doneSentences += 1;
-            if (!ok) {
-              failures.push({ chapter: ch.title, text: sent, error: lastErr });
-              log(`音频书：跳过一句（${ch.title}）：${sent.slice(0, 20)}… ${lastErr}`);
-            }
-            send('book:progress', { done: doneSentences, total: totalSentences, text: sent, ok });
-          }
-
-          if (files.length) {
-            const chWav = path.join(dir, `chapter_${String(ci + 1).padStart(3, '0')}.wav`);
-            const okConcat = await concatWavs(files, chWav);
-            if (okConcat) {
-              chapterWavs.push(chWav);
-              titles.push(ch.title);
-            }
-            send('book:chapter', { index: ci, title: ch.title, status: okConcat ? 'done' : 'failed' });
-          } else {
-            send('book:chapter', { index: ci, title: ch.title, status: 'failed' });
-          }
-        }
-
-        let m4a = '';
-        if (chapterWavs.length) {
-          m4a = path.join(dir, `${slug(opts.name)}.m4a`);
-          send('book:export', { status: 'running' });
-          await buildM4a(chapterWavs, titles, gap, m4a);
-          send('book:export', { status: 'done', path: m4a });
-        }
-
-        return { ok: true, dir, m4a, chapters: chapterWavs.length, failures, canceled: cancel };
+        await prepare(dir, opts.voice);
+        const r = await runChapters({ dir, chapters, idxs: chapters.map((c) => c.index), params: opts.params, ref: opts.ref, partsRoot });
+        send('book:export', { status: 'running' });
+        const m4a = await exportBook(dir, opts.name, gap);
+        send('book:export', { status: 'done', path: m4a });
+        return { ok: true, dir, m4a, failures: r.failures, canceled: cancel };
       } catch (err) {
         log('音频书失败：' + String(err.message || err));
         return { ok: false, error: String(err.message || err), dir };
-      } finally {
-        running = false;
-        cancel = false;
-      }
+      } finally { running = false; cancel = false; }
+    });
+
+    // 继续 / 重做目录里已有的书；onlyChapter 指定只重做某一章
+    ipcMain.handle('book:resume', async (_e, opts) => {
+      if (running) return { ok: false, error: '已有任务在跑' };
+      const dir = String(opts.dir || '');
+      const bookFile = path.join(dir, 'book.json');
+      if (!fs.existsSync(bookFile)) return { ok: false, error: '找不到这本书的记录' };
+      const meta = JSON.parse(fs.readFileSync(bookFile, 'utf8'));
+      const chapters = meta.chapters || [];
+      if (!chapters.length) return { ok: false, error: '这本书没有章节' };
+      running = true; cancel = false;
+      current = { dir };
+      const partsRoot = path.join(dir, 'parts');
+      const gap = Number(opts.gapSec != null ? opts.gapSec : meta.gap) || 0;
+      try {
+        await prepare(dir, opts.voice);
+        let idxs = chapters.map((c) => c.index);
+        if (Number.isInteger(opts.onlyChapter)) {
+          idxs = [opts.onlyChapter];
+          fs.rmSync(path.join(partsRoot, pad3(opts.onlyChapter)), { recursive: true, force: true });
+          try { fs.unlinkSync(path.join(dir, `chapter_${pad3(opts.onlyChapter + 1)}.wav`)); } catch (_) {}
+        }
+        const r = await runChapters({ dir, chapters, idxs, params: meta.params, ref: opts.ref, partsRoot });
+        send('book:export', { status: 'running' });
+        const m4a = await exportBook(dir, meta.name, gap);
+        send('book:export', { status: 'done', path: m4a });
+        return { ok: true, dir, m4a, failures: r.failures, canceled: cancel };
+      } catch (err) {
+        log('音频书续跑失败：' + String(err.message || err));
+        return { ok: false, error: String(err.message || err) };
+      } finally { running = false; cancel = false; }
+    });
+
+    ipcMain.handle('book:detail', (_e, { dir }) => {
+      try {
+        const meta = JSON.parse(fs.readFileSync(path.join(dir, 'book.json'), 'utf8'));
+        const have = fs.readdirSync(dir).filter((f) => /^chapter_\d{3}\.wav$/.test(f));
+        const m4a = fs.readdirSync(dir).find((f) => f.endsWith('.m4a')) || '';
+        return {
+          ok: true,
+          name: meta.name,
+          gap: meta.gap,
+          m4a: m4a ? path.join(dir, m4a) : '',
+          chapters: (meta.chapters || []).map((c) => ({
+            index: c.index, title: c.title, sentences: c.sentences.length, chars: c.chars,
+            hasWav: have.includes(`chapter_${pad3(c.index + 1)}.wav`)
+          }))
+        };
+      } catch (err) { return { ok: false, error: String(err.message || err) }; }
     });
 
     ipcMain.handle('book:list', () => {
@@ -271,8 +314,7 @@ module.exports = function initBook(deps) {
         try { meta = JSON.parse(fs.readFileSync(path.join(dir, 'book.json'), 'utf8')); } catch (_) {}
         const m4a = fs.readdirSync(dir).find((f) => f.endsWith('.m4a'));
         out.push({
-          dir,
-          name: meta.name || d.name,
+          dir, name: meta.name || d.name,
           chapters: (meta.chapters || []).length,
           m4a: m4a ? path.join(dir, m4a) : '',
           mtime: fs.statSync(dir).mtime.toISOString()

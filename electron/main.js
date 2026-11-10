@@ -363,6 +363,40 @@ async function runSelfTest() {
     } catch (_) {}
   };
 
+  if (process.env.GSO_BOOK_TEST === '2') {
+    try {
+      for (let i = 0; i < 90 && phase !== 'ready'; i += 1) await new Promise((r) => setTimeout(r, 2000));
+      const out = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = (ms) => new Promise(r => setTimeout(r, ms));
+        const tab = [...document.querySelectorAll('.seg button')].find(b => b.textContent.trim() === '音频书');
+        if (!tab) return 'NO_TAB';
+        tab.click();
+        await wait(800);
+        const expand = [...document.querySelectorAll('.book .row button')].find(b => b.textContent.trim() === '展开');
+        if (!expand) return 'NO_EXPAND';
+        expand.click();
+        await wait(1200);
+        const redo = [...document.querySelectorAll('.book .detail button')].find(b => b.textContent.trim() === '重做');
+        if (!redo) return 'NO_REDO';
+        redo.click();
+        return 'REDO_CLICKED';
+      })()`);
+      log('BOOK2_TEST: ' + out);
+      for (let i = 0; i < 180; i += 1) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const st = await mainWindow.webContents.executeJavaScript(`(() => {
+          const busy = [...document.querySelectorAll('.book .detail button')].some(b => b.textContent.includes('重做中'));
+          const alert = document.querySelector('.book .alert');
+          return { busy, alert: alert ? alert.textContent : '' };
+        })()`);
+        if (!st.busy) { log('BOOK2_TEST done, alert=' + st.alert); break; }
+      }
+      await snap('shot-book2.png');
+    } catch (err) { log('BOOK2_TEST fail: ' + err); }
+    setTimeout(() => app.exit(0), 800);
+    return;
+  }
+
   if (process.env.GSO_BOOK_TEST === '1') {
     try {
       for (let i = 0; i < 90 && phase !== 'ready'; i += 1) await new Promise((r) => setTimeout(r, 2000));
