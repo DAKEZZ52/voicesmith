@@ -44,7 +44,7 @@ onMounted(async () => {
   }));
   offs.push(window.api.on('book:export', (p) => {
     if (p.status === 'running') exportInfo.value = { status: 'running' };
-    if (p.status === 'done') exportInfo.value = { status: 'done', path: p.path };
+    if (p.status === 'done') exportInfo.value = { status: 'done', path: p.path, srt: p.srt || '' };
   }));
   offs.push(window.api.on('log', (l) => {
     logs.value.push(l);
@@ -252,7 +252,10 @@ async function openBook(b) {
         <button class="mini" :disabled="!running || stopping" @click="stop">{{ stopping ? '正在停止…' : '停止' }}</button>
         <span class="muted hint">中断后到下方「历史」里点「继续未完成」，已合成的句子会跳过</span>
       </div>
-      <div v-if="exportInfo && exportInfo.status === 'done'" class="ok">已导出 m4a（带章节）：<span class="mono">{{ exportInfo.path }}</span></div>
+      <div v-if="exportInfo && exportInfo.status === 'done'" class="ok">
+        已导出 m4a（带章节）：<span class="mono">{{ exportInfo.path }}</span>
+        <button v-if="exportInfo.srt" class="mini" @click="openDir(exportInfo.srt)">打开字幕 srt</button>
+      </div>
       <div v-if="error" class="alert">{{ error }}</div>
     </section>
 
@@ -281,6 +284,7 @@ async function openBook(b) {
           <span class="muted">{{ detail.chapters.length }} 章 · 点「重做」只重新合成该章并刷新 m4a</span>
           <span class="spacer"></span>
           <button class="mini" :disabled="running" @click="resumeBook">{{ running ? '处理中…' : '继续未完成' }}</button>
+          <button v-if="detail.srt" class="mini" @click="openDir(detail.srt)">打开字幕</button>
           <button class="mini" @click="openDir(detail.dir)">打开本书目录</button>
         </div>
         <div class="chapter-list">

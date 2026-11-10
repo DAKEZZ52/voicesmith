@@ -145,8 +145,41 @@ module.exports = function initBook(deps) {
     const out = path.join(dir, `${slug(name || meta.name || 'book')}.m4a`);
     r = await run(ffmpeg(), ['-y', '-v', 'error', '-i', plain, '-i', metaTxt, '-map_metadata', '1', '-map', '0:a', '-c', 'copy', out]);
     if (r.code !== 0) throw new Error('写入章节失败: ' + r.err);
+
+    // 逐句字幕（SRT）：按实际合成出来的句子顺序与时长生成
+    const ts = (sec) => {
+      const ms = Math.max(0, Math.round(sec * 1000));
+      const h = Math.floor(ms / 3600000);
+      const m = Math.floor((ms % 3600000) / 60000);
+      const s = Math.floor((ms % 60000) / 1000);
+      const msec = ms % 1000;
+      const p = (n, w = 2) => String(n).padStart(w, '0');
+      return `${p(h)}:${p(m)}:${p(s)},${p(msec, 3)}`;
+    };
+    const srtRows = [];
+    let cursor = 0;
+    let num = 1;
+    for (const f of files) {
+      const chIdx = Number(f.slice(8, 11)) - 1;
+      const ch = (meta.chapters || [])[chIdx];
+      const sentences = (ch && ch.sentences) || [];
+      const partsDir = path.join(dir, 'parts', pad3(chIdx));
+      for (let si = 0; si < sentences.length; si += 1) {
+        const p = path.join(partsDir, String(si).padStart(4, '0') + '.wav');
+        if (!fs.existsSync(p)) continue;
+        const d = wavDur(p);
+        if (d <= 0) continue;
+        srtRows.push(`${num}\n${ts(cursor)} --> ${ts(cursor + d)}\n${sentences[si]}\n`);
+        num += 1;
+        cursor += d;
+      }
+      cursor += gap;
+    }
+    const srtPath = path.join(dir, `${slug(name || meta.name || 'book')}.srt`);
+    try { fs.writeFileSync(srtPath, srtRows.join('\n'), 'utf8'); } catch (_) {}
+
     try { fs.unlinkSync(plain); fs.unlinkSync(fullWav); fs.unlinkSync(metaTxt); fs.unlinkSync(gapFile); } catch (_) {}
-    return out;
+    return { m4a: out, srt: srtPath };
   }
 
   // 逐章逐句合成；idxs 指定只跑哪几章
@@ -244,9 +277,9 @@ module.exports = function initBook(deps) {
         await prepare(dir, opts.voice);
         const r = await runChapters({ dir, chapters, idxs: chapters.map((c) => c.index), params: opts.params, ref: opts.ref, partsRoot });
         send('book:export', { status: 'running' });
-        const m4a = await exportBook(dir, opts.name, gap);
-        send('book:export', { status: 'done', path: m4a });
-        return { ok: true, dir, m4a, failures: r.failures, canceled: cancel };
+        const ex = await exportBook(dir, opts.name, gap);
+        send('book:export', { status: 'done', path: ex.m4a, srt: ex.srt });
+        return { ok: true, dir, m4a: ex.m4a, srt: ex.srt, failures: r.failures, canceled: cancel };
       } catch (err) {
         log('音频书失败：' + String(err.message || err));
         return { ok: false, error: String(err.message || err), dir };
@@ -276,9 +309,9 @@ module.exports = function initBook(deps) {
         }
         const r = await runChapters({ dir, chapters, idxs, params: meta.params, ref: opts.ref, partsRoot });
         send('book:export', { status: 'running' });
-        const m4a = await exportBook(dir, meta.name, gap);
-        send('book:export', { status: 'done', path: m4a });
-        return { ok: true, dir, m4a, failures: r.failures, canceled: cancel };
+        const ex = await exportBook(dir, meta.name, gap);
+        send('book:export', { status: 'done', path: ex.m4a, srt: ex.srt });
+        return { ok: true, dir, m4a: ex.m4a, srt: ex.srt, failures: r.failures, canceled: cancel };
       } catch (err) {
         log('音频书续跑失败：' + String(err.message || err));
         return { ok: false, error: String(err.message || err) };
@@ -290,11 +323,13 @@ module.exports = function initBook(deps) {
         const meta = JSON.parse(fs.readFileSync(path.join(dir, 'book.json'), 'utf8'));
         const have = fs.readdirSync(dir).filter((f) => /^chapter_\d{3}\.wav$/.test(f));
         const m4a = fs.readdirSync(dir).find((f) => f.endsWith('.m4a')) || '';
+        const srt = fs.readdirSync(dir).find((f) => f.endsWith('.srt')) || '';
         return {
           ok: true,
           name: meta.name,
           gap: meta.gap,
           m4a: m4a ? path.join(dir, m4a) : '',
+          srt: srt ? path.join(dir, srt) : '',
           chapters: (meta.chapters || []).map((c) => ({
             index: c.index, title: c.title, sentences: c.sentences.length, chars: c.chars,
             hasWav: have.includes(`chapter_${pad3(c.index + 1)}.wav`)
@@ -317,6 +352,7 @@ module.exports = function initBook(deps) {
           dir, name: meta.name || d.name,
           chapters: (meta.chapters || []).length,
           m4a: m4a ? path.join(dir, m4a) : '',
+          srt: srt ? path.join(dir, srt) : '',
           mtime: fs.statSync(dir).mtime.toISOString()
         });
       }

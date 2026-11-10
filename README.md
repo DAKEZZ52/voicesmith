@@ -22,6 +22,10 @@
 ![训练](docs/ui-train.png)
 ![设置](docs/ui-settings.png)
 
+## 文档
+
+- [使用指南](docs/USAGE.md)：安装、单句/批量/音频书/翻唱/训练、参数说明、常见问题
+
 ## 安装
 
 1. 从 [Releases](https://github.com/DAKEZZ52/voicesmith/releases/latest) 下载安装包 `VoiceSmith-Setup-<版本>.exe`，以及运行环境分卷 `payload.7z.001` ~ `payload.7z.004`（共 5 个文件，放在同一目录）

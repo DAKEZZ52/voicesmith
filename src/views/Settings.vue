@@ -75,6 +75,7 @@ function setTheme(k) {
 function openOutput() { window.api.openOutput(); }
 function openFolder() { window.api.openFolder(); }
 function openLogs() { window.api.openLogs(); }
+function openHelp() { window.api.openHelp(); }
 
 async function checkUpdate() {
   const res = await window.api.updaterCheck();
@@ -139,6 +140,7 @@ async function checkUpdate() {
       <div class="actions">
         <button class="mini" @click="openFolder">打开安装目录</button>
         <button class="mini" @click="openLogs">打开日志</button>
+        <button class="mini" @click="openHelp">使用指南</button>
         <button class="mini" @click="openOutput">打开输出目录</button>
         <button class="mini" @click="checkUpdate">检查更新</button>
       </div>

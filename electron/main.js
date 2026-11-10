@@ -834,6 +834,14 @@ ipcMain.handle('voices', () => (payloadReady() ? listVoices() : { pairs: [], sov
 ipcMain.handle('refs', () => seedRefs());
 ipcMain.handle('open-folder', () => shell.openPath(payloadRoot()));
 ipcMain.handle('open-logs', () => shell.openPath(path.join(app.getPath('userData'), 'logs')));
+ipcMain.handle('open-help', () => {
+  const p = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'docs', 'USAGE.md')
+    : path.join(__dirname, 'docs', 'USAGE.md');
+  if (!fs.existsSync(p)) return { ok: false, error: '找不到使用指南' };
+  shell.openPath(p);
+  return { ok: true, path: p };
+});
 ipcMain.handle('open-dir', (_e, { path: p }) => {
   try {
     if (!p || !fs.existsSync(p) || !fs.statSync(p).isDirectory()) return { ok: false, error: '目录不存在' };
