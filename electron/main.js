@@ -363,6 +363,39 @@ async function runSelfTest() {
     } catch (_) {}
   };
 
+  if (process.env.GSO_SING_TEST === '1') {
+    try {
+      for (let i = 0; i < 90 && phase !== 'ready'; i += 1) await new Promise((r) => setTimeout(r, 2000));
+      const out = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = (ms) => new Promise(r => setTimeout(r, ms));
+        const tab = [...document.querySelectorAll('.seg button')].find(b => b.textContent.trim() === '唱歌');
+        if (!tab) return 'NO_TAB';
+        tab.click();
+        await wait(900);
+        const btn = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === '开始唱歌');
+        if (!btn) return 'NO_BTN';
+        if (btn.disabled) return 'DISABLED';
+        btn.click();
+        return 'STARTED';
+      })()`);
+      log('SING_TEST: ' + out);
+      for (let i = 0; i < 150; i += 1) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const st = await mainWindow.webContents.executeJavaScript(`(() => {
+          const ok = document.querySelector('.sing .ok');
+          const alert = document.querySelector('.sing .alert');
+          const busy = [...document.querySelectorAll('.sing button')].some(b => b.textContent.includes('生成中'));
+          return { ok: ok ? ok.textContent.slice(0, 120) : '', alert: alert ? alert.textContent : '', busy };
+        })()`);
+        if (st.ok) { log('SING_TEST ok: ' + st.ok); break; }
+        if (!st.busy && i > 3) { log('SING_TEST idle alert=' + st.alert); break; }
+      }
+      await snap('shot-sing.png');
+    } catch (err) { log('SING_TEST fail: ' + err); }
+    setTimeout(() => app.exit(0), 800);
+    return;
+  }
+
   if (process.env.GSO_BOOK_TEST === '2') {
     try {
       for (let i = 0; i < 90 && phase !== 'ready'; i += 1) await new Promise((r) => setTimeout(r, 2000));
@@ -1655,6 +1688,106 @@ ipcMain.handle('updater:install', () => {
 // ---------- 音频书 ----------
 const book = require('./book')({ app, payloadRoot, log, send, synthOne, setVoice });
 book.register(ipcMain);
+
+// ---------- 唱歌 ----------
+let singProc = null;
+
+function singScript() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'py', 'sing_engine.py');
+  }
+  return path.join(__dirname, 'py', 'sing_engine.py');
+}
+
+ipcMain.handle('pick-audio', async () => {
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: '选择要跟唱的人声/歌曲', properties: ['openFile'],
+    filters: [{ name: '音频', extensions: ['wav', 'mp3', 'flac', 'm4a', 'ogg'] }]
+  });
+  if (r.canceled || !r.filePaths.length) return { ok: false };
+  return { ok: true, path: r.filePaths[0] };
+});
+
+ipcMain.handle('sing:cancel', () => {
+  if (singProc) {
+    try { spawn('taskkill', ['/PID', String(singProc.pid), '/T', '/F'], { windowsHide: true }); } catch (_) {}
+    singProc = null;
+  }
+  return { ok: true };
+});
+
+ipcMain.handle('sing:start', async (_e, opts) => {
+  if (singProc) return { ok: false, error: '正在生成中，先停止或等它结束' };
+  const root = payloadRoot();
+  const rt = pythonRuntime(root);
+  const outDir = path.join(root, 'output');
+  fs.mkdirSync(outDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const safeName = String(opts.name || '唱歌').replace(/[\\/:*?"<>|\s]/g, '').slice(0, 16) || '唱歌';
+  const out = path.join(outDir, `唱_${safeName}_${stamp}.wav`);
+  const ff = path.join(root, 'runtime', 'ffmpeg.exe');
+
+  const args = [
+    '-u', singScript(),
+    '--mode', opts.mode === 'follow' ? 'follow' : 'notation',
+    '--lyrics', String(opts.lyrics || ''),
+    '--notes', String(opts.notes || ''),
+    '--audio', String(opts.audio || ''),
+    '--ref', String(opts.ref || ''),
+    '--ref-text', String(opts.refText || ''),
+    '--out', out,
+    '--beat', String(Number(opts.beat) || 0.55),
+    '--transpose', String(Number(opts.transpose) || 0),
+    '--ff', ff,
+    '--api', 'http://127.0.0.1:' + apiPort
+  ];
+  if (!fs.existsSync(singScript())) return { ok: false, error: '唱歌引擎缺失: ' + singScript() };
+
+  const env = Object.assign({}, process.env, {
+    PYTHONIOENCODING: 'utf-8',
+    PYTHONUTF8: '1',
+    PYTHONUNBUFFERED: '1'
+  });
+  if (rt.useBase) env.PYTHONPATH = rt.site;
+
+  const proc = spawn(rt.exe, args, { cwd: root, env, windowsHide: true });
+  singProc = proc;
+  let buf = '';
+  let done = null;
+  let errMsg = '';
+
+  const finish = (result) => {
+    if (done) return;
+    done = result;
+  };
+
+  proc.stdout.setEncoding('utf8');
+  proc.stdout.on('data', (d) => {
+    buf += d;
+    const lines = buf.split(/\r?\n/);
+    buf = lines.pop();
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith('{')) { if (t) log('sing | ' + t.slice(0, 200)); continue; }
+      let obj = null;
+      try { obj = JSON.parse(t); } catch (_) { continue; }
+      if (obj.type === 'progress') send('sing:progress', obj);
+      else if (obj.type === 'done') finish({ ok: true, path: obj.path, duration: obj.duration, notes: obj.notes });
+      else if (obj.type === 'error') { errMsg = obj.message; finish({ ok: false, error: obj.message }); }
+    }
+  });
+  proc.stderr.setEncoding('utf8');
+  proc.stderr.on('data', (d) => log('sing err | ' + String(d).slice(0, 300)));
+
+  await new Promise((resolve) => {
+    proc.on('close', (code) => {
+      singProc = null;
+      if (!done) finish({ ok: false, error: errMsg || ('唱歌进程退出 code=' + code) });
+      resolve();
+    });
+  });
+  return done || { ok: false, error: '未知错误' };
+});
 
 function createWindow() {
   mainWindow = new BrowserWindow({

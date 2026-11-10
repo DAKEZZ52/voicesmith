@@ -3,7 +3,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const channels = ['phase', 'log', 'download-progress', 'install-progress', 'batch:item', 'batch:done',
-  'train:step', 'train:log', 'train:epoch', 'updater', 'book:progress', 'book:chapter', 'book:export'];
+  'train:step', 'train:log', 'train:epoch', 'updater', 'book:progress', 'book:chapter', 'book:export', 'sing:progress'];
 
 contextBridge.exposeInMainWorld('api', {
   state: () => ipcRenderer.invoke('state'),
@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld('api', {
   bookStart: (payload) => ipcRenderer.invoke('book:start', payload),
   bookStop: () => ipcRenderer.invoke('book:stop'),
   bookList: () => ipcRenderer.invoke('book:list'),
+  pickAudio: () => ipcRenderer.invoke('pick-audio'),
+  singStart: (payload) => ipcRenderer.invoke('sing:start', payload),
+  singCancel: () => ipcRenderer.invoke('sing:cancel'),
   bookDetail: (payload) => ipcRenderer.invoke('book:detail', payload),
   bookResume: (payload) => ipcRenderer.invoke('book:resume', payload),
   bookState: () => ipcRenderer.invoke('book:state'),
