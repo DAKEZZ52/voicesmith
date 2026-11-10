@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld('api', {
   pickPayload: () => ipcRenderer.invoke('pick-payload'),
   downloadModels: () => ipcRenderer.invoke('download-models'),
   openFolder: () => ipcRenderer.invoke('open-folder'),
+  openLogs: () => ipcRenderer.invoke('open-logs'),
+  logPath: () => ipcRenderer.invoke('log-path'),
   openOutput: () => ipcRenderer.invoke('open-output'),
   on: (channel, cb) => {
     if (!channels.includes(channel)) return () => {};

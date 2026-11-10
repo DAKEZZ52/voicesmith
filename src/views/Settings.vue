@@ -67,6 +67,7 @@ async function removeModel(item) {
 
 function openOutput() { window.api.openOutput(); }
 function openFolder() { window.api.openFolder(); }
+function openLogs() { window.api.openLogs(); }
 
 async function checkUpdate() {
   const res = await window.api.updaterCheck();
@@ -124,6 +125,7 @@ async function checkUpdate() {
       <div class="kv"><span>运行环境</span><b class="mono ellipsis" :title="payloadPath">{{ payloadPath }}</b></div>
       <div class="actions">
         <button class="mini" @click="openFolder">打开安装目录</button>
+        <button class="mini" @click="openLogs">打开日志</button>
         <button class="mini" @click="openOutput">打开输出目录</button>
         <button class="mini" @click="checkUpdate">检查更新</button>
       </div>

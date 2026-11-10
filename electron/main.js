@@ -25,9 +25,53 @@ let lastError = '';
 function send(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
 }
-const log = (line) => send('log', line);
+
+// ---------- 日志落盘（崩溃/异常后能查） ----------
+let logStream = null;
+let logPath = '';
+const MAX_LOG_BYTES = 4 * 1024 * 1024;
+
+function initLogFile() {
+  try {
+    const dir = path.join(app.getPath('userData'), 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    const d = new Date();
+    const p2 = (n) => String(n).padStart(2, '0');
+    logPath = path.join(dir, `app-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}.log`);
+    // 超过上限就轮转一份 .1
+    try {
+      const st = fs.statSync(logPath);
+      if (st.size > MAX_LOG_BYTES) {
+        try { fs.unlinkSync(logPath + '.1'); } catch (_) {}
+        fs.renameSync(logPath, logPath + '.1');
+      }
+    } catch (_) {}
+    logStream = fs.createWriteStream(logPath, { flags: 'a' });
+    logStream.on('error', () => { logStream = null; });
+  } catch (_) {
+    logStream = null;
+  }
+}
+
+function writeLine(line) {
+  try {
+    if (!logStream) return;
+    const d = new Date();
+    const p2 = (n) => String(n).padStart(2, '0');
+    logStream.write(`[${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}] ${line}\n`);
+  } catch (_) {}
+}
+
+function logLine(line) {
+  const text = String(line == null ? '' : line);
+  writeLine(text);
+  send('log', text);
+}
+
+const log = logLine;
 const setPhase = (p, extra) => {
   phase = p;
+  logLine('phase -> ' + p);
   send('phase', Object.assign({ phase: p }, extra || {}));
 };
 
@@ -683,6 +727,8 @@ ipcMain.handle('boot', async () => { await boot(); return true; });
 ipcMain.handle('voices', () => (payloadReady() ? listVoices() : { pairs: [], sovits: [], gpt: [] }));
 ipcMain.handle('refs', () => seedRefs());
 ipcMain.handle('open-folder', () => shell.openPath(payloadRoot()));
+ipcMain.handle('open-logs', () => shell.openPath(path.join(app.getPath('userData'), 'logs')));
+ipcMain.handle('log-path', () => logPath);
 ipcMain.handle('open-output', () => {
   const dir = path.join(payloadRoot(), 'output');
   fs.mkdirSync(dir, { recursive: true });
@@ -1539,6 +1585,8 @@ if (!gotLock) {
     }
   });
   app.whenReady().then(() => {
+    initLogFile();
+    logLine('app start ' + app.getVersion() + ' / ' + process.platform + ' / electron ' + process.versions.electron);
     migrateUserData();
     createWindow();
     boot();
@@ -1548,6 +1596,13 @@ if (!gotLock) {
     });
   });
 }
+
+process.on('uncaughtException', (err) => {
+  logLine('UNCAUGHT ' + (err && err.stack ? err.stack : String(err)));
+});
+process.on('unhandledRejection', (err) => {
+  logLine('UNHANDLED ' + String(err && err.stack ? err.stack : err));
+});
 
 app.on('before-quit', () => { quitting = true; killApi(); if (trainProc && trainProc.exitCode === null) { try { spawn('taskkill', ['/PID', String(trainProc.pid), '/T', '/F'], { windowsHide: true }); } catch (_) {} } });
 app.on('window-all-closed', () => { quitting = true; killApi(); app.quit(); });
