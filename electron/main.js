@@ -66,6 +66,7 @@ function logLine(line) {
   const text = String(line == null ? '' : line);
   writeLine(text);
   send('log', text);
+  if (process.env.GSO_DEBUG === '1') console.log('[log] ' + text);
 }
 
 const log = logLine;
@@ -362,9 +363,50 @@ async function runSelfTest() {
     } catch (_) {}
   };
 
+  if (process.env.GSO_BOOK_TEST === '1') {
+    try {
+      for (let i = 0; i < 90 && phase !== 'ready'; i += 1) await new Promise((r) => setTimeout(r, 2000));
+      const bookText = '第一章 开端\n今天天气不错。我们一起出去走走吧。\n第二章 继续\n古之学者必有师。师者，所以传道授业解惑也。';
+      const out = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = (ms) => new Promise(r => setTimeout(r, ms));
+        const tab = [...document.querySelectorAll('.seg button')].find(b => b.textContent.trim() === '音频书');
+        if (!tab) return 'NO_TAB';
+        tab.click();
+        await wait(600);
+        const ta = document.querySelector('textarea');
+        if (!ta) return 'NO_TEXTAREA';
+        ta.value = ${JSON.stringify(bookText)};
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        await wait(400);
+        const startBtn = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === '开始生成');
+        if (!startBtn) return 'NO_START_BTN';
+        startBtn.click();
+        return 'STARTED';
+      })()`);
+      log('BOOK_TEST: ' + out);
+      for (let i = 0; i < 240; i += 1) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const st = await mainWindow.webContents.executeJavaScript(`(() => {
+          const btn = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === '开始生成');
+          const ok = document.querySelector('.book .ok');
+          const alert = document.querySelector('.book .alert');
+          const pct = (document.querySelector('.book .editor-head .muted') || {}).textContent || '';
+          return { idle: !!btn, ok: ok ? ok.textContent : '', alert: alert ? alert.textContent : '', pct };
+        })()`);
+        if (st.ok) { log('BOOK_TEST ok: ' + st.ok); break; }
+        if (st.idle && i > 5) { log('BOOK_TEST idle, alert=' + st.alert + ' pct=' + st.pct); break; }
+      }
+      await snap('shot-book.png');
+    } catch (err) {
+      log('BOOK_TEST fail: ' + err);
+    }
+    setTimeout(() => app.exit(0), 800);
+    return;
+  }
+
   if (process.env.GSO_SHOT_MODE || process.env.GSO_SHOT_TRAIN === '1') {
     try {
-      const labelMap = { single: '单句', batch: '批量', train: '训练', settings: '设置' };
+      const labelMap = { single: '单句', batch: '批量', book: '音频书', train: '训练', settings: '设置' };
       const want = labelMap[process.env.GSO_SHOT_MODE || 'train'] || '训练';
       await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = (ms) => new Promise(r => setTimeout(r, ms));
@@ -728,6 +770,15 @@ ipcMain.handle('voices', () => (payloadReady() ? listVoices() : { pairs: [], sov
 ipcMain.handle('refs', () => seedRefs());
 ipcMain.handle('open-folder', () => shell.openPath(payloadRoot()));
 ipcMain.handle('open-logs', () => shell.openPath(path.join(app.getPath('userData'), 'logs')));
+ipcMain.handle('open-path', (_e, { path: p }) => {
+  try {
+    const root = path.resolve(payloadRoot(), 'output').toLowerCase();
+    const target = path.resolve(String(p || '')).toLowerCase();
+    if (!target.startsWith(root)) return { ok: false, error: '只允许打开输出目录内的文件' };
+    shell.showItemInFolder(p);
+    return { ok: true };
+  } catch (err) { return { ok: false, error: String(err.message || err) }; }
+});
 ipcMain.handle('log-path', () => logPath);
 ipcMain.handle('open-output', () => {
   const dir = path.join(payloadRoot(), 'output');
@@ -768,6 +819,23 @@ ipcMain.handle('download-models', async () => {
   }
 });
 
+// 导入 txt / md 文本（音频书用）
+ipcMain.handle('pick-text', async () => {
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: '选择文本文件', properties: ['openFile'],
+    filters: [{ name: '文本', extensions: ['txt', 'md'] }]
+  });
+  if (r.canceled || !r.filePaths.length) return { ok: false };
+  try {
+    const raw = fs.readFileSync(r.filePaths[0]);
+    let text = raw.toString('utf8');
+    if (text.includes('\uFFFD')) text = raw.toString('gbk');
+    return { ok: true, name: path.basename(r.filePaths[0]), text };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+});
+
 ipcMain.handle('import-ref', async () => {
   const r = await dialog.showOpenDialog(mainWindow, {
     title: '选择参考音频（3~10 秒）', properties: ['openFile'],
@@ -792,7 +860,7 @@ ipcMain.handle('update-ref-text', (_e, { path: p, text }) => {
   return true;
 });
 
-ipcMain.handle('select-voice', async (_e, { sovits, gpt }) => {
+async function setVoice(sovits, gpt) {
   const get = (p) => new Promise((resolve, reject) => {
     http.get({ host: '127.0.0.1', port: apiPort, path: p, timeout: 60000 }, (res) => {
       const c = [];
@@ -813,7 +881,9 @@ ipcMain.handle('select-voice', async (_e, { sovits, gpt }) => {
   } catch (err) {
     return { ok: false, error: String(err.message || err) };
   }
-});
+}
+
+ipcMain.handle('select-voice', async (_e, { sovits, gpt }) => setVoice(sovits, gpt));
 
 ipcMain.handle('tts', async (_e, opts) => {
   const t0 = Date.now();
@@ -1547,6 +1617,10 @@ ipcMain.handle('updater:install', () => {
 });
 
 // ---------- window ----------
+
+// ---------- 音频书 ----------
+const book = require('./book')({ app, payloadRoot, log, send, synthOne, setVoice });
+book.register(ipcMain);
 
 function createWindow() {
   mainWindow = new BrowserWindow({

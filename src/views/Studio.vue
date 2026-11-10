@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import Train from './Train.vue';
 import Settings from './Settings.vue';
+import Book from './Book.vue';
 
 const props = defineProps({ phase: { type: String, default: 'starting' } });
 
@@ -23,7 +24,7 @@ const showLog = ref(false);
 
 // ---- 批量 ----
 const hashMode = (String(location.hash || '').match(/mode=(\w+)/) || [])[1];
-const mode = ref(['single', 'batch', 'train', 'settings'].includes(hashMode) ? hashMode : 'single');
+const mode = ref(['single', 'batch', 'book', 'train', 'settings'].includes(hashMode) ? hashMode : 'single');
 const queue = ref([]);
 const batchRunning = ref(false);
 const batchDir = ref('');
@@ -574,6 +575,7 @@ function replay(item) {
         <div class="seg">
           <button :class="{ on: mode === 'single' }" @click="mode = 'single'">单句</button>
           <button :class="{ on: mode === 'batch' }" @click="mode = 'batch'">批量</button>
+          <button :class="{ on: mode === 'book' }" @click="mode = 'book'">音频书</button>
           <button :class="{ on: mode === 'train' }" @click="mode = 'train'">训练</button>
           <button :class="{ on: mode === 'settings' }" @click="mode = 'settings'">设置</button>
         </div>
@@ -582,6 +584,7 @@ function replay(item) {
       </header>
 
       <Train v-if="mode === 'train'" @refresh="reloadVoices" />
+      <Book v-else-if="mode === 'book'" :ready="ready" />
       <Settings v-else-if="mode === 'settings'" :voices-count="voices.length" />
 
       <template v-else>

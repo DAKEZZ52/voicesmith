@@ -3,7 +3,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const channels = ['phase', 'log', 'download-progress', 'install-progress', 'batch:item', 'batch:done',
-  'train:step', 'train:log', 'train:epoch', 'updater'];
+  'train:step', 'train:log', 'train:epoch', 'updater', 'book:progress', 'book:chapter', 'book:export'];
 
 contextBridge.exposeInMainWorld('api', {
   state: () => ipcRenderer.invoke('state'),
@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('api', {
   voices: () => ipcRenderer.invoke('voices'),
   refs: () => ipcRenderer.invoke('refs'),
   importRef: () => ipcRenderer.invoke('import-ref'),
+  pickTextFile: () => ipcRenderer.invoke('pick-text'),
   deleteRef: (payload) => ipcRenderer.invoke('refs:delete', payload),
   tidyRefs: () => ipcRenderer.invoke('refs:tidy'),
   listModels: () => ipcRenderer.invoke('models:list'),
@@ -30,6 +31,11 @@ contextBridge.exposeInMainWorld('api', {
   trainPrepare: (payload) => ipcRenderer.invoke('train:prepare', payload),
   trainStart: (payload) => ipcRenderer.invoke('train:start', payload),
   trainCancel: () => ipcRenderer.invoke('train:cancel'),
+  bookParse: (payload) => ipcRenderer.invoke('book:parse', payload),
+  bookStart: (payload) => ipcRenderer.invoke('book:start', payload),
+  bookStop: () => ipcRenderer.invoke('book:stop'),
+  bookList: () => ipcRenderer.invoke('book:list'),
+  bookState: () => ipcRenderer.invoke('book:state'),
   updaterState: () => ipcRenderer.invoke('updater:state'),
   updaterCheck: () => ipcRenderer.invoke('updater:check'),
   updaterInstall: () => ipcRenderer.invoke('updater:install'),
@@ -39,6 +45,7 @@ contextBridge.exposeInMainWorld('api', {
   openLogs: () => ipcRenderer.invoke('open-logs'),
   logPath: () => ipcRenderer.invoke('log-path'),
   openOutput: () => ipcRenderer.invoke('open-output'),
+  openPath: (payload) => ipcRenderer.invoke('open-path', payload),
   on: (channel, cb) => {
     if (!channels.includes(channel)) return () => {};
     const handler = (_e, payload) => cb(payload);
