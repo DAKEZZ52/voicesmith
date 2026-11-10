@@ -133,6 +133,12 @@ async function loadWave() {
   }
 }
 
+function cssVar(name, fallback) {
+  try {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  } catch (_) { return fallback; }
+}
 function draw() {
   const cv = cvEl.value;
   if (!cv || !peaks.value.length) return;
@@ -150,7 +156,7 @@ function draw() {
   const x1 = toX(selEnd.value);
 
   // 选区背景
-  g.fillStyle = 'rgba(255,138,61,0.10)';
+  g.fillStyle = cssVar('--accent-soft', 'rgba(255,138,61,0.10)');
   g.fillRect(x0, 0, Math.max(1, x1 - x0), h);
 
   // 波形
@@ -161,12 +167,12 @@ function draw() {
     const inSel = x >= x0 && x <= x1;
     const amp = Math.max(0.02, peaks.value[i]);
     const bh = amp * (h - 6);
-    g.fillStyle = inSel ? '#ff8a3d' : 'rgba(180,190,205,0.42)';
+    g.fillStyle = inSel ? cssVar('--accent', '#ff8a3d') : cssVar('--muted-2', 'rgba(180,190,205,0.42)');
     g.fillRect(x, (h - bh) / 2, Math.max(0.6, barW - 0.6), bh);
   }
 
   // 边界线
-  g.fillStyle = '#ff8a3d';
+  g.fillStyle = cssVar('--accent', '#ff8a3d');
   g.fillRect(x0 - 1, 0, 2, h);
   g.fillRect(x1 - 1, 0, 2, h);
 }
@@ -242,6 +248,7 @@ async function saveSelAsRef() {
 }
 
 onMounted(async () => {
+  window.addEventListener('vs-theme', () => { try { draw(); } catch (_) {} });
   window.api.on('phase', (p) => {
     if (p.phase === 'ready') {
       const first = !ready.value;
@@ -595,6 +602,8 @@ function replay(item) {
 
       <template v-else>
 
+      <div class="workspace" :class="mode">
+
       <section class="editor card">
         <div class="editor-head">
           <span>合成文本</span>
@@ -653,6 +662,8 @@ function replay(item) {
         <audio v-if="previewUrl" :src="previewUrl" controls autoplay class="preview-audio"></audio>
       </section>
 
+      <aside class="rail">
+
       <section class="params card">
         <div class="param">
           <label>语速 <b class="mono">{{ params.speed.toFixed(2) }}</b></label>
@@ -705,6 +716,8 @@ function replay(item) {
         </template>
       </div>
 
+      </aside>
+
       <div v-if="error" class="alert">{{ error }}</div>
 
       <section v-if="mode === 'batch'" class="batch card">
@@ -747,6 +760,7 @@ function replay(item) {
           </button>
         </div>
       </section>
+      </div>
       </template>
     </main>
   </div>
@@ -843,7 +857,7 @@ function replay(item) {
   position: sticky; top: 0; z-index: 5;
   display: flex; align-items: center; gap: 14px;
   margin: -14px -18px 14px; padding: 10px 18px;
-  background: rgba(11, 13, 16, 0.92);
+  background: var(--topbar);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line-soft);
 }
@@ -909,12 +923,25 @@ function replay(item) {
 .param label b { color: var(--accent); font-weight: 600; font-size: 11.5px; }
 .param select { width: 100%; }
 
-.run-row {
-  position: sticky; bottom: -28px; z-index: 4;
-  display: flex; justify-content: flex-end; align-items: center; gap: 8px;
-  margin: 0 -18px -28px; padding: 10px 18px 14px;
-  background: linear-gradient(180deg, rgba(11, 13, 16, 0), rgba(11, 13, 16, 0.94) 42%);
+.workspace { display: block; }
+.workspace.single {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  column-gap: 12px;
+  align-items: start;
 }
+.workspace.single > .editor,
+.workspace.single > .ref-editor,
+.workspace.single > .wave,
+.workspace.single > .result,
+.workspace.single > .history,
+.workspace.single > .alert { grid-column: 1; }
+.rail { grid-column: 2; grid-row: 1 / span 8; position: sticky; top: 52px; align-self: start; }
+.rail .params { display: flex; flex-direction: column; gap: 14px; }
+.rail .param.wide { grid-column: auto; }
+.rail .run-row { margin-top: 10px; }
+.rail .big { width: 100%; min-width: 0; }
+.run-row { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 10px 0 0; }
 .big {
   min-width: 220px; height: 38px; font-size: 13px;
   display: inline-flex; align-items: center; justify-content: center; gap: 10px;

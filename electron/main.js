@@ -503,8 +503,16 @@ async function runSelfTest() {
         await wait(1500);
         return 'ok';
       })()`);
+      if (process.env.GSO_THEME) {
+        const th = String(process.env.GSO_THEME).replace(/[^a-z]/g, '');
+        await mainWindow.webContents.executeJavaScript(
+          "document.documentElement.dataset.theme = '" + th + "';" +
+          "window.dispatchEvent(new CustomEvent('vs-theme', { detail: '" + th + "' }));"
+        );
+        await new Promise((r) => setTimeout(r, 400));
+      }
       const img = await mainWindow.webContents.capturePage();
-      const shotName = 'shot-' + (process.env.GSO_SHOT_MODE || 'train') + '.png';
+      const shotName = 'shot-' + (process.env.GSO_SHOT_MODE || 'train') + (process.env.GSO_THEME ? '-' + process.env.GSO_THEME : '') + '.png';
       fs.writeFileSync(path.join(shotDir, shotName), img.toPNG());
       console.log('SELFTEST_SHOT:' + shotName);
     } catch (err) {

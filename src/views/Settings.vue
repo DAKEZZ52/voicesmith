@@ -65,6 +65,13 @@ async function removeModel(item) {
   await refresh();
 }
 
+const themes = [{ key: 'warm', label: '暖调' }, { key: 'cool', label: '冷调' }, { key: 'light', label: '浅色' }];
+const current = ref((typeof localStorage !== 'undefined' && localStorage.getItem('vs-theme')) || 'warm');
+function setTheme(k) {
+  current.value = k;
+  window.dispatchEvent(new CustomEvent('vs-theme', { detail: k }));
+}
+
 function openOutput() { window.api.openOutput(); }
 function openFolder() { window.api.openFolder(); }
 function openLogs() { window.api.openLogs(); }
@@ -121,6 +128,12 @@ async function checkUpdate() {
     <section class="card">
       <div class="editor-head"><span>关于</span></div>
       <div class="kv"><span>版本</span><b class="mono">{{ version }}</b></div>
+      <div class="kv">
+        <span>外观</span>
+        <span class="theme-row">
+          <button class="mini" v-for="t in themes" :key="t.key" :class="{ on: current === t.key }" @click="setTheme(t.key)">{{ t.label }}</button>
+        </span>
+      </div>
       <div class="kv"><span>音色</span><b>{{ voicesCount }} 个</b></div>
       <div class="kv"><span>运行环境</span><b class="mono ellipsis" :title="payloadPath">{{ payloadPath }}</b></div>
       <div class="actions">
@@ -157,6 +170,8 @@ async function checkUpdate() {
 .kv { display: flex; gap: 12px; padding: 5px 2px; font-size: 12.5px; }
 .kv span { color: var(--muted); flex: 0 0 70px; }
 .kv b { font-weight: 500; min-width: 0; }
+.theme-row { display: flex; gap: 6px; }
+.theme-row .mini.on { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .actions { display: flex; gap: 8px; margin-top: 12px; }
 .alert { margin-top: 10px; border: 1px solid rgba(228, 103, 95, .32); background: rgba(228, 103, 95, .07); color: #e6a3a0; border-radius: 8px; padding: 8px 10px; font-size: 12px; }
