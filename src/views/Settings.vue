@@ -136,13 +136,13 @@ async function checkUpdate() {
 
 <style scoped>
 .settings { display: flex; flex-direction: column; gap: 14px; }
-.card { background: linear-gradient(180deg, var(--panel), #1c2027); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
-.editor-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
+.editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 24px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--line-soft); font-size: 11px; letter-spacing: .06em; color: var(--muted); }
 .editor-head em { font-style: normal; margin-left: 8px; }
 .head-actions { display: flex; gap: 6px; }
 .list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; }
-.row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 9px; border: 1px solid transparent; }
-.row:hover { background: #1d222a; }
+.row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; border: 1px solid transparent; }
+.row:hover { background: var(--panel-2); }
 .row.playing { background: rgba(255, 138, 61, .08); border-color: rgba(255, 138, 61, .25); }
 .badge { font-size: 10.5px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); flex: 0 0 auto; }
 .badge.sovits { color: #7fd3ff; border-color: rgba(127, 211, 255, .35); }
@@ -150,14 +150,14 @@ async function checkUpdate() {
 .badge.batch { color: var(--muted-2); }
 .name { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .meta { font-size: 11px; color: var(--muted-2); flex: 0 0 auto; }
-.mini { padding: 4px 10px; font-size: 11.5px; border-radius: 8px; background: #232932; }
-.mini.danger { color: #ff9a9a; border-color: rgba(255, 107, 107, .25); }
-.mini.danger:hover { background: rgba(255, 107, 107, .12); }
+.mini { height: 24px; padding: 0 8px; font-size: 11.5px; border-radius: 8px; background: transparent; border: 1px solid transparent; color: var(--muted); }
+.mini.danger { color: var(--muted-2); border-color: transparent; }
+.mini.danger:hover { color: var(--err); background: rgba(228, 103, 95, .1); border-color: rgba(228, 103, 95, .28); }
 .empty { color: var(--muted-2); font-size: 12px; padding: 14px 8px; }
 .kv { display: flex; gap: 12px; padding: 5px 2px; font-size: 12.5px; }
 .kv span { color: var(--muted); flex: 0 0 70px; }
 .kv b { font-weight: 500; min-width: 0; }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .actions { display: flex; gap: 8px; margin-top: 12px; }
-.alert { margin-top: 10px; border: 1px solid rgba(255, 107, 107, .35); background: rgba(255, 107, 107, .08); color: #ffb4b4; border-radius: 9px; padding: 8px 10px; font-size: 12px; }
+.alert { margin-top: 10px; border: 1px solid rgba(228, 103, 95, .32); background: rgba(228, 103, 95, .07); color: #e6a3a0; border-radius: 8px; padding: 8px 10px; font-size: 12px; }
 </style>

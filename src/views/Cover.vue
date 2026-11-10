@@ -143,7 +143,7 @@ function openRvc() { if (info.value.root) window.api.openDir({ path: info.value.
           </span>
         </div>
 
-        <div class="bar"><i :class="{ active: running }"></i></div>
+        <div class="bar" v-if="running"><i :class="{ active: running }"></i></div>
         <div class="actions">
           <button class="primary" :disabled="running || !inputFile" @click="convert">
             {{ running ? (stageLabel[stage] || '处理中…') : '开始转换' }}
@@ -176,25 +176,25 @@ function openRvc() { if (info.value.root) window.api.openDir({ path: info.value.
 
 <style scoped>
 .cover { display: flex; flex-direction: column; gap: 14px; }
-.card { background: linear-gradient(180deg, var(--panel), #1c2027); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
 .head-actions { display: flex; align-items: center; gap: 8px; }
-.editor-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+.editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 24px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--line-soft); font-size: 11px; letter-spacing: .06em; color: var(--muted); }
 .row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .lbl { flex: 0 0 68px; font-size: 12px; color: var(--muted); }
 .sel { flex: 1; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 7px 10px; font-size: 12.5px; }
 .opts { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--muted); }
-.num { width: 62px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 7px; color: var(--text); padding: 4px 6px; font-size: 12px; }
+.num { width: 62px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 4px 6px; font-size: 12px; }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
-.bar { height: 6px; border-radius: 3px; background: #20252d; overflow: hidden; margin: 8px 0 12px; }
-.bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), #ffb066); }
+.bar { height: 3px; border-radius: 2px; background: var(--line-soft); overflow: hidden; margin: 6px 0 12px; }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); }
 .bar i.active { width: 100%; animation: pulse 1.4s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
 .actions { display: flex; align-items: center; gap: 10px; }
-.primary { padding: 9px 22px; border-radius: 9px; background: linear-gradient(180deg, #ff9a4d, #f0761f); color: #1a1206; font-weight: 600; font-size: 13px; }
+.primary { height: 34px; padding: 0 20px; border-radius: 8px; background: var(--accent); border-color: var(--accent); color: #1a1206; font-weight: 650; font-size: 13px; }
 .primary:disabled { opacity: .5; }
-.mini { padding: 4px 10px; font-size: 11.5px; border-radius: 8px; background: #232932; }
+.mini { height: 24px; padding: 0 8px; font-size: 11.5px; border-radius: 8px; background: transparent; border: 1px solid transparent; color: var(--muted); }
 .ok { margin-top: 10px; font-size: 12px; color: var(--ok); word-break: break-all; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.alert { margin-top: 10px; border: 1px solid rgba(255, 107, 107, .35); background: rgba(255, 107, 107, .08); color: #ffb4b4; border-radius: 9px; padding: 10px 12px; font-size: 12px; line-height: 1.7; }
+.alert { margin-top: 10px; border: 1px solid rgba(228, 103, 95, .32); background: rgba(228, 103, 95, .07); color: #e6a3a0; border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.7; }
 .tips { margin: 0; padding-left: 18px; font-size: 12px; color: var(--muted); line-height: 1.9; }
-code { background: #222933; padding: 0 4px; border-radius: 4px; }
+code { background: var(--panel-2); padding: 0 4px; border-radius: 4px; }
 </style>

@@ -19,7 +19,8 @@
 
 ![批量](docs/ui-batch.png)
 ![音频书](docs/ui-book.png)
-![裁剪](docs/ui-trim.png)
+![翻唱](docs/ui-cover.png)
+![唱歌](docs/ui-sing.png)
 ![训练](docs/ui-train.png)
 ![设置](docs/ui-settings.png)
 

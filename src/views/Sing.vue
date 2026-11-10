@@ -181,7 +181,7 @@ async function playItem(item) {
         <span class="muted note-hint">解析出 {{ noteCount }} 个音符，将匹配歌词前 {{ noteCount }} 个音节的字</span>
       </div>
 
-      <div class="bar"><i :style="{ width: (total ? Math.round(done / total * 100) : 0) + '%' }"></i></div>
+      <div class="bar" v-if="running || done"><i :style="{ width: (total ? Math.round(done / total * 100) : 0) + '%' }"></i></div>
       <div class="actions">
         <button class="primary" :disabled="!canRun" @click="generate">{{ running ? '生成中…' : '开始唱歌' }}</button>
         <button class="mini" :disabled="!running" @click="stop">停止</button>
@@ -228,8 +228,8 @@ async function playItem(item) {
 
 <style scoped>
 .sing { display: flex; flex-direction: column; gap: 14px; }
-.card { background: linear-gradient(180deg, var(--panel), #1c2027); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
-.editor-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
+.editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 24px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--line-soft); font-size: 11px; letter-spacing: .06em; color: var(--muted); }
 .mini-seg button { padding: 4px 12px; font-size: 11.5px; }
 .row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .lbl { flex: 0 0 68px; font-size: 12px; color: var(--muted); }
@@ -237,21 +237,21 @@ async function playItem(item) {
 .inp.short { flex: 0 0 220px; }
 .sel { flex: 1; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 7px 10px; font-size: 12.5px; }
 .opts { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
-.num { width: 60px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 7px; color: var(--text); padding: 4px 6px; font-size: 12px; }
-code { background: #222933; padding: 0 4px; border-radius: 4px; }
+.num { width: 60px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 4px 6px; font-size: 12px; }
+code { background: var(--panel-2); padding: 0 4px; border-radius: 4px; }
 .hint { font-size: 11.5px; margin: -4px 0 10px 80px; }
-.bar { height: 6px; border-radius: 3px; background: #20252d; overflow: hidden; margin: 6px 0 12px; }
-.bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), #ffb066); transition: width .25s ease; }
+.bar { height: 3px; border-radius: 2px; background: var(--line-soft); overflow: hidden; margin: 6px 0 12px; }
+.bar i { display: block; height: 100%; background: var(--accent); transition: width 200ms var(--ease); }
 .actions { display: flex; align-items: center; gap: 10px; }
-.primary { padding: 9px 22px; border-radius: 9px; background: linear-gradient(180deg, #ff9a4d, #f0761f); color: #1a1206; font-weight: 600; font-size: 13px; }
+.primary { height: 34px; padding: 0 20px; border-radius: 8px; background: var(--accent); border-color: var(--accent); color: #1a1206; font-weight: 650; font-size: 13px; }
 .primary:disabled { opacity: .5; }
-.mini { padding: 4px 10px; font-size: 11.5px; border-radius: 8px; background: #232932; }
+.mini { height: 24px; padding: 0 8px; font-size: 11.5px; border-radius: 8px; background: transparent; border: 1px solid transparent; color: var(--muted); }
 .ok { margin-top: 10px; font-size: 12px; color: var(--ok); word-break: break-all; }
-.alert { margin-top: 10px; border: 1px solid rgba(255, 107, 107, .35); background: rgba(255, 107, 107, .08); color: #ffb4b4; border-radius: 9px; padding: 8px 10px; font-size: 12px; }
+.alert { margin-top: 10px; border: 1px solid rgba(228, 103, 95, .32); background: rgba(228, 103, 95, .07); color: #e6a3a0; border-radius: 8px; padding: 8px 10px; font-size: 12px; }
 .note-hint { font-size: 11.5px; }
 .list { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow: auto; }
 .item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; font-size: 12.5px; }
-.item:hover { background: #1d222a; }
+.item:hover { background: var(--panel-2); }
 .item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .empty { color: var(--muted-2); font-size: 12px; padding: 10px 4px; }
 .head-actions { display: flex; gap: 6px; }

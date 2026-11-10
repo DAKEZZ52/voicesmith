@@ -168,7 +168,7 @@ function statusText(s) {
         <button class="primary" :disabled="!canPrepare" @click="prepare">
           {{ phase === 'preparing' ? '处理中…' : '开始处理（切片 + 打标 + 特征）' }}
         </button>
-        <button class="primary" :disabled="!canTrain || busy" @click="startTrain">
+        <button :disabled="!canTrain || busy" @click="startTrain">
           {{ phase === 'training' ? '训练中…' : '开始训练' }}
         </button>
         <button class="ghost" :disabled="!busy" @click="cancel">取消</button>
@@ -187,27 +187,28 @@ function statusText(s) {
 
 <style scoped>
 .train { display: flex; flex-direction: column; gap: 14px; }
-.card { background: linear-gradient(180deg, var(--panel), #1c2027); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
-.editor-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
+.editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 24px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--line-soft); font-size: 11px; letter-spacing: .06em; color: var(--muted); }
 .pick-row { display: flex; align-items: center; gap: 12px; }
 .dir { font-size: 11.5px; color: var(--muted-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hint { margin: 12px 0 0; font-size: 12px; color: var(--muted); line-height: 1.7; }
 .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .grid label { display: flex; flex-direction: column; gap: 6px; font-size: 11.5px; color: var(--muted); }
 .grid input { width: 100%; }
-.steps { display: flex; flex-direction: column; gap: 2px; }
-.step { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 9px; border: 1px solid transparent; }
-.step.running { background: rgba(255, 138, 61, .07); border-color: rgba(255, 138, 61, .25); }
-.step .idx { width: 24px; font-size: 11px; color: var(--muted-2); }
-.step .label { width: 150px; font-size: 12.5px; }
-.step .detail { flex: 1; font-size: 11.5px; }
-.step .state { font-size: 11px; color: var(--muted-2); }
+.steps { display: flex; flex-direction: column; gap: 0; }
+.step { display: flex; align-items: center; gap: 12px; height: 30px; padding: 0 8px; border-radius: 7px; border: 1px solid transparent; border-bottom-color: var(--line-soft); }
+.step:last-child { border-bottom-color: transparent; }
+.step.running { background: var(--accent-soft); border-color: var(--accent-line); }
+.step .idx { width: 20px; font-size: 10.5px; color: var(--muted-2); }
+.step .label { width: 140px; font-size: 12px; color: var(--text); }
+.step .detail { flex: 1; font-size: 11px; color: var(--muted-2); }
+.step .state { font-size: 10.5px; color: var(--muted-2); }
 .step.done .state { color: var(--ok); }
 .step.running .state { color: var(--accent); }
 .step.failed .state { color: var(--err); }
-.actions { display: flex; gap: 10px; margin-top: 14px; }
-.actions button { min-width: 150px; }
-.alert { border: 1px solid rgba(255, 107, 107, .35); background: rgba(255, 107, 107, .08); color: #ffb4b4; border-radius: 10px; padding: 10px 12px; margin-top: 12px; font-size: 12.5px; }
-.done { border: 1px solid rgba(69, 200, 160, .35); background: rgba(69, 200, 160, .08); color: #9be4cd; border-radius: 10px; padding: 10px 12px; margin-top: 12px; font-size: 12.5px; }
-.log { margin: 12px 0 0; max-height: 220px; overflow: auto; background: #0d1014; border: 1px solid #20262e; border-radius: 10px; padding: 10px 12px; font-size: 11px; color: #8b96a8; white-space: pre-wrap; user-select: text; }
+.actions { display: flex; gap: 8px; margin-top: 12px; }
+.actions button { min-width: 132px; }
+.alert { border: 1px solid rgba(228, 103, 95, .32); background: rgba(228, 103, 95, .07); color: #e6a3a0; border-radius: 8px; padding: 10px 12px; margin-top: 12px; font-size: 12.5px; }
+.done { border: 1px solid rgba(79, 184, 154, .3); background: rgba(79, 184, 154, .07); color: #8fd3c0; border-radius: 8px; padding: 9px 11px; margin-top: 12px; font-size: 11.5px; }
+.log { margin: 12px 0 0; max-height: 220px; overflow: auto; background: var(--inset); border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 12px; font-size: 10.5px; line-height: 1.7; color: var(--muted-2); white-space: pre-wrap; user-select: text; }
 </style>

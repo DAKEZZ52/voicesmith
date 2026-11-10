@@ -192,7 +192,7 @@ async function openBook(b) {
       </div>
       <textarea v-model="text" class="book-text mono" placeholder="粘贴整本书或长文。程序会自动识别「第一章 / 第1章 / Chapter 1 / # 标题」分章；没有标题就按段落每 3000 字切一章。"></textarea>
       <div class="meta-row">
-        <span>{{ chars }} 字 · 约 {{ estMinutes < 1 ? '不到 1' : estMinutes }} 分钟音频</span>
+        <span>{{ chars }} 字 · {{ estMinutes < 1 ? '不到 1' : '约 ' + estMinutes }} 分钟音频</span>
         <span class="muted">章节上限 <input v-model="maxChars" class="num" type="number" min="500" step="500" /> 字</span>
       </div>
     </section>
@@ -217,7 +217,7 @@ async function openBook(b) {
         <span>生成</span>
         <span class="muted">{{ percent }}% · {{ done }}/{{ total }} 句</span>
       </div>
-      <div class="bar"><i :style="{ width: percent + '%' }"></i></div>
+      <div class="bar" v-if="running || done"><i :style="{ width: percent + '%' }"></i></div>
       <div class="opts">
         <label>书稿名 <input v-model="bookName" class="txt" placeholder="我的有声书" /></label>
         <label>章节间隔 <input v-model="gapSec" class="num" type="number" min="0" max="5" step="0.2" /> 秒</label>
@@ -275,43 +275,43 @@ async function openBook(b) {
 
 <style scoped>
 .book { display: flex; flex-direction: column; gap: 14px; }
-.card { background: linear-gradient(180deg, var(--panel), #1c2027); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
-.editor-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
+.editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 24px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--line-soft); font-size: 11px; letter-spacing: .06em; color: var(--muted); }
 .editor-head em { font-style: normal; margin-left: 6px; }
 .head-actions { display: flex; gap: 6px; }
-.book-text { width: 100%; min-height: 180px; max-height: 300px; resize: vertical; background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; color: var(--text); padding: 12px 14px; font-size: 13px; line-height: 1.7; }
+.book-text { width: 100%; min-height: 180px; max-height: 300px; resize: vertical; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 12px 14px; font-size: 13px; line-height: 1.7; }
 .meta-row { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11.5px; color: var(--muted-2); }
-.num { width: 64px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 7px; color: var(--text); padding: 3px 6px; font-size: 12px; }
+.num { width: 64px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 3px 6px; font-size: 12px; }
 .detail { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
 .detail-head { display: flex; align-items: center; gap: 10px; font-size: 12.5px; margin-bottom: 8px; }
 .detail-head .muted { font-size: 11px; }
 .chapter-row .state { width: 52px; }
 .chapter-list { max-height: 240px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
 .chapter-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; border: 1px solid transparent; font-size: 12.5px; }
-.chapter-row:hover { background: #1d222a; }
+.chapter-row:hover { background: var(--panel-2); }
 .chapter-row.running { border-color: rgba(255, 138, 61, .3); background: rgba(255, 138, 61, .07); }
 .chapter-row.done { border-color: rgba(74, 222, 128, .2); }
 .chapter-row .idx { color: var(--muted-2); font-size: 11px; }
 .chapter-row .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chapter-row .meta { color: var(--muted-2); font-size: 11px; }
 .chapter-row .state { color: var(--ok); font-size: 11px; width: 40px; text-align: right; }
-.bar { height: 6px; border-radius: 3px; background: #20252d; overflow: hidden; margin-bottom: 12px; }
+.bar { height: 3px; border-radius: 2px; background: var(--line-soft); overflow: hidden; margin: 6px 0 12px; }
 .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), #ffb066); transition: width .3s ease; }
 .opts { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
 .opts label { display: flex; align-items: center; gap: 6px; }
-.txt { width: 180px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 7px; color: var(--text); padding: 4px 8px; font-size: 12px; }
+.txt { width: 180px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 4px 8px; font-size: 12px; }
 .line { color: var(--muted-2); font-size: 11.5px; margin-bottom: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .actions { display: flex; align-items: center; gap: 10px; }
-.primary { padding: 9px 22px; border-radius: 9px; background: linear-gradient(180deg, #ff9a4d, #f0761f); color: #1a1206; font-weight: 600; font-size: 13px; }
+.primary { height: 34px; padding: 0 20px; border-radius: 8px; background: var(--accent); border-color: var(--accent); color: #1a1206; font-weight: 650; font-size: 13px; }
 .primary:disabled { opacity: .6; }
 .hint { font-size: 11px; }
 .ok { margin-top: 10px; font-size: 12px; color: var(--ok); word-break: break-all; }
-.alert { margin-top: 10px; border: 1px solid rgba(255, 107, 107, .35); background: rgba(255, 107, 107, .08); color: #ffb4b4; border-radius: 9px; padding: 8px 10px; font-size: 12px; }
+.alert { margin-top: 10px; border: 1px solid rgba(228, 103, 95, .32); background: rgba(228, 103, 95, .07); color: #e6a3a0; border-radius: 8px; padding: 8px 10px; font-size: 12px; }
 .list { display: flex; flex-direction: column; gap: 2px; max-height: 200px; overflow: auto; }
 .row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; font-size: 12.5px; }
-.row:hover { background: #1d222a; }
+.row:hover { background: var(--panel-2); }
 .row .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .meta { color: var(--muted-2); font-size: 11px; }
 .empty { color: var(--muted-2); font-size: 12px; padding: 12px 6px; }
-.mini { padding: 4px 10px; font-size: 11.5px; border-radius: 8px; background: #232932; }
+.mini { height: 24px; padding: 0 8px; font-size: 11.5px; border-radius: 8px; background: transparent; border: 1px solid transparent; color: var(--muted); }
 </style>

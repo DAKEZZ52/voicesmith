@@ -354,7 +354,7 @@ async function runSelfTest() {
   await new Promise((r) => setTimeout(r, 1500));
   const shotDir = path.join(app.getPath('temp'), 'gso-selftest');
   fs.mkdirSync(shotDir, { recursive: true });
-  try { mainWindow.setSize(1280, 1080); } catch (_) {}
+  try { mainWindow.setSize(Number(process.env.GSO_SHOT_W) || 1280, Number(process.env.GSO_SHOT_H) || 1080); } catch (_) {}
 
   const snap = async (name) => {
     try {
@@ -1096,7 +1096,18 @@ function outputName(text) {
 // ---------- 参考音频管理 ----------
 
 function wavSeconds(file) {
-  try { return Math.max(0, (fs.statSync(file).size - 44)) / (32000 * 2); } catch (_) { return 0; }
+  try {
+    const fd = fs.openSync(file, 'r');
+    const head = Buffer.alloc(44);
+    fs.readSync(fd, head, 0, 44, 0);
+    fs.closeSync(fd);
+    if (head.toString('ascii', 0, 4) !== 'RIFF') return 0;
+    const channels = head.readUInt16LE(22) || 1;
+    const rate = head.readUInt32LE(24) || 32000;
+    const bits = head.readUInt16LE(34) || 16;
+    const dataBytes = Math.max(0, fs.statSync(file).size - 44);
+    return dataBytes / (rate * channels * (bits / 8));
+  } catch (_) { return 0; }
 }
 
 function safeBase(name) {
@@ -1179,7 +1190,11 @@ ipcMain.handle('outputs:list', () => {
     } catch (_) {}
   };
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    if (entry.isFile() && entry.name.endsWith('.wav')) push(path.join(root, entry.name), '单句');
+    if (entry.isFile() && entry.name.endsWith('.wav')) {
+      const n = entry.name;
+      const group = n.startsWith('翻唱_') ? '翻唱' : n.startsWith('试听_') ? '试听' : n.startsWith('唱_') ? '唱歌' : '单句';
+      push(path.join(root, n), group);
+    }
     if (entry.isDirectory() && entry.name.startsWith('batch_')) {
       const dir = path.join(root, entry.name);
       for (const f of fs.readdirSync(dir)) if (f.endsWith('.wav')) push(path.join(dir, f), entry.name.replace('batch_', '批量 '));
