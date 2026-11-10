@@ -3,7 +3,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const channels = ['phase', 'log', 'download-progress', 'install-progress', 'batch:item', 'batch:done',
-  'train:step', 'train:log', 'train:epoch', 'updater', 'book:progress', 'book:chapter', 'book:export', 'sing:progress', 'rvc:progress'];
+  'train:step', 'train:log', 'train:epoch', 'updater', 'book:progress', 'book:chapter', 'book:export', 'rvc:progress'];
 
 contextBridge.exposeInMainWorld('api', {
   state: () => ipcRenderer.invoke('state'),
@@ -39,8 +39,6 @@ contextBridge.exposeInMainWorld('api', {
   rvcInfo: () => ipcRenderer.invoke('rvc:info'),
   rvcConvert: (payload) => ipcRenderer.invoke('rvc:convert', payload),
   rvcCancel: () => ipcRenderer.invoke('rvc:cancel'),
-  singStart: (payload) => ipcRenderer.invoke('sing:start', payload),
-  singCancel: () => ipcRenderer.invoke('sing:cancel'),
   bookDetail: (payload) => ipcRenderer.invoke('book:detail', payload),
   bookResume: (payload) => ipcRenderer.invoke('book:resume', payload),
   bookState: () => ipcRenderer.invoke('book:state'),
