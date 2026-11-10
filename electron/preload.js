@@ -3,7 +3,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const channels = ['phase', 'log', 'download-progress', 'install-progress', 'batch:item', 'batch:done',
-  'train:step', 'train:log', 'train:epoch', 'updater', 'book:progress', 'book:chapter', 'book:export', 'sing:progress'];
+  'train:step', 'train:log', 'train:epoch', 'updater', 'book:progress', 'book:chapter', 'book:export', 'sing:progress', 'rvc:progress'];
 
 contextBridge.exposeInMainWorld('api', {
   state: () => ipcRenderer.invoke('state'),
@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('api', {
   bookStop: () => ipcRenderer.invoke('book:stop'),
   bookList: () => ipcRenderer.invoke('book:list'),
   pickAudio: () => ipcRenderer.invoke('pick-audio'),
+  rvcInfo: () => ipcRenderer.invoke('rvc:info'),
+  rvcConvert: (payload) => ipcRenderer.invoke('rvc:convert', payload),
+  rvcCancel: () => ipcRenderer.invoke('rvc:cancel'),
   singStart: (payload) => ipcRenderer.invoke('sing:start', payload),
   singCancel: () => ipcRenderer.invoke('sing:cancel'),
   bookDetail: (payload) => ipcRenderer.invoke('book:detail', payload),
@@ -51,6 +54,7 @@ contextBridge.exposeInMainWorld('api', {
   logPath: () => ipcRenderer.invoke('log-path'),
   openOutput: () => ipcRenderer.invoke('open-output'),
   openPath: (payload) => ipcRenderer.invoke('open-path', payload),
+  openDir: (payload) => ipcRenderer.invoke('open-dir', payload),
   on: (channel, cb) => {
     if (!channels.includes(channel)) return () => {};
     const handler = (_e, payload) => cb(payload);

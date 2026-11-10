@@ -363,6 +363,27 @@ async function runSelfTest() {
     } catch (_) {}
   };
 
+  if (process.env.GSO_RVC_TEST === '1') {
+    try {
+      for (let i = 0; i < 90 && phase !== 'ready'; i += 1) await new Promise((r) => setTimeout(r, 2000));
+      const opts = {
+        input: process.env.GSO_RVC_INPUT || '',
+        model: process.env.GSO_RVC_MODEL || '',
+        index: process.env.GSO_RVC_INDEX || '',
+        indexRate: 0.75,
+        pitch: 0,
+        separate: true
+      };
+      const res = await mainWindow.webContents.executeJavaScript(
+        'window.api.rvcConvert(' + JSON.stringify(opts) + ')'
+      );
+      log('RVC_TEST: ' + JSON.stringify(res));
+      await snap('shot-rvc.png');
+    } catch (err) { log('RVC_TEST fail: ' + err); }
+    setTimeout(() => app.exit(0), 800);
+    return;
+  }
+
   if (process.env.GSO_SING_TEST === '1') {
     try {
       for (let i = 0; i < 90 && phase !== 'ready'; i += 1) await new Promise((r) => setTimeout(r, 2000));
@@ -473,7 +494,7 @@ async function runSelfTest() {
 
   if (process.env.GSO_SHOT_MODE || process.env.GSO_SHOT_TRAIN === '1') {
     try {
-      const labelMap = { single: '单句', batch: '批量', book: '音频书', train: '训练', settings: '设置' };
+      const labelMap = { single: '单句', batch: '批量', book: '音频书', sing: '唱歌', cover: '翻唱', train: '训练', settings: '设置' };
       const want = labelMap[process.env.GSO_SHOT_MODE || 'train'] || '训练';
       await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = (ms) => new Promise(r => setTimeout(r, ms));
@@ -837,6 +858,13 @@ ipcMain.handle('voices', () => (payloadReady() ? listVoices() : { pairs: [], sov
 ipcMain.handle('refs', () => seedRefs());
 ipcMain.handle('open-folder', () => shell.openPath(payloadRoot()));
 ipcMain.handle('open-logs', () => shell.openPath(path.join(app.getPath('userData'), 'logs')));
+ipcMain.handle('open-dir', (_e, { path: p }) => {
+  try {
+    if (!p || !fs.existsSync(p) || !fs.statSync(p).isDirectory()) return { ok: false, error: '目录不存在' };
+    shell.openPath(p);
+    return { ok: true };
+  } catch (err) { return { ok: false, error: String(err.message || err) }; }
+});
 ipcMain.handle('open-path', (_e, { path: p }) => {
   try {
     const root = path.resolve(payloadRoot(), 'output').toLowerCase();
@@ -1688,6 +1716,186 @@ ipcMain.handle('updater:install', () => {
 // ---------- 音频书 ----------
 const book = require('./book')({ app, payloadRoot, log, send, synthOne, setVoice });
 book.register(ipcMain);
+
+// ---------- 翻唱（RVC） ----------
+let rvcProc = null;
+
+function rvcCandidates() {
+  const list = [];
+  if (process.env.RVC_ROOT) list.push(process.env.RVC_ROOT);
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'config.json'), 'utf8'));
+    if (cfg.rvcRoot) list.push(cfg.rvcRoot);
+  } catch (_) {}
+  list.push(path.join(path.dirname(app.getPath('exe')), 'rvc'));
+  list.push('E:\\01-项目开发\\RVC');
+  return list;
+}
+
+function rvcRoot() {
+  for (const p of rvcCandidates()) {
+    if (!p) continue;
+    if (fs.existsSync(path.join(p, '.venv', 'Scripts', 'python.exe'))) return p;
+  }
+  return '';
+}
+
+ipcMain.handle('rvc:info', () => {
+  const root = rvcRoot();
+  if (!root) return { ok: false, error: '没有找到 RVC 安装（需要包含 .venv 的目录）' };
+  const models = [];
+  const wdir = path.join(root, 'assets', 'weights');
+  if (fs.existsSync(wdir)) {
+    for (const f of fs.readdirSync(wdir)) {
+      if (!f.endsWith('.pth')) continue;
+      const full = path.join(wdir, f);
+      const st = fs.statSync(full);
+      models.push({ name: f, path: full, sizeMB: +(st.size / 1048576).toFixed(1), mtime: st.mtimeMs });
+    }
+  }
+  const idx = [];
+  const idir = path.join(root, 'assets', 'indices');
+  if (fs.existsSync(idir)) {
+    for (const f of fs.readdirSync(idir)) {
+      if (f.endsWith('.index')) idx.push({ name: f, path: path.join(idir, f) });
+    }
+  }
+  models.sort((a, b) => b.mtime - a.mtime); // 最新的模型排最前
+  return { ok: true, root, models, indices: idx };
+});
+
+function runProc(cmd, args, opts) {
+  return new Promise((resolve) => {
+    const p = spawn(cmd, args, Object.assign({ windowsHide: true }, opts || {}));
+    let out = '';
+    let err = '';
+    p.stdout.on('data', (d) => { out += d; if (opts && opts.onLine) String(d).split(/\r?\n/).filter(Boolean).forEach(opts.onLine); });
+    p.stderr.on('data', (d) => { err += d; });
+    p.on('close', (code) => resolve({ code, out, err }));
+  });
+}
+
+// faiss 的 C 层打不开含中文的路径，索引统一复制到纯 ASCII 的临时目录
+function asciiIndexPath(indexPath) {
+  const dir = path.join(app.getPath('temp'), 'voicesmith-rvc');
+  fs.mkdirSync(dir, { recursive: true });
+  const dst = path.join(dir, 'index.idx');
+  try {
+    if (!fs.existsSync(dst) || fs.statSync(dst).size !== fs.statSync(indexPath).size) {
+      fs.copyFileSync(indexPath, dst);
+    }
+    return dst;
+  } catch (_) {
+    return '';
+  }
+}
+
+ipcMain.handle('rvc:cancel', () => {
+  if (rvcProc) {
+    try { spawn('taskkill', ['/PID', String(rvcProc.pid), '/T', '/F'], { windowsHide: true }); } catch (_) {}
+    rvcProc = null;
+  }
+  return { ok: true };
+});
+
+ipcMain.handle('rvc:convert', async (_e, opts) => {
+  if (rvcProc) return { ok: false, error: '正在处理中，请先停止' };
+  const root = rvcRoot();
+  if (!root) return { ok: false, error: '没有找到 RVC 安装' };
+  const input = String(opts.input || '');
+  if (!fs.existsSync(input)) return { ok: false, error: '输入文件不存在' };
+
+  const payload = payloadRoot();
+  const py = pythonRuntime(payload);
+  const rvcPy = path.join(root, '.venv', 'Scripts', 'python.exe');
+  const ff = path.join(payload, 'runtime', 'ffmpeg.exe');
+  const outDir = path.join(payload, 'output');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const work = path.join(outDir, `rvc_${stamp}`);
+  fs.mkdirSync(work, { recursive: true });
+  const baseName = path.basename(input).replace(/\.[^.]+$/, '').slice(0, 30);
+
+  const send2 = (stage, extra) => send('rvc:progress', Object.assign({ stage }, extra || {}));
+
+  try {
+    let vocal = input;
+    let inst = '';
+    if (opts.separate !== false) {
+      send2('separating');
+      const sepScript = app.isPackaged
+        ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'py', 'uvr_separate.py')
+        : path.join(__dirname, 'py', 'uvr_separate.py');
+      const env = Object.assign({}, process.env, { PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1', PYTHONUNBUFFERED: '1' });
+      if (py.useBase) env.PYTHONPATH = py.site;
+      const r = await runProc(py.exe, ['-u', sepScript, '--input', input, '--outdir', work,
+        '--payload', payload, '--ffmpeg', ff, '--model', opts.sepModel || 'HP2_all_vocals', '--device', 'cpu'], { env });
+      let done = null;
+      for (const line of r.out.split(/\r?\n/)) {
+        if (!line.trim().startsWith('{')) continue;
+        try {
+          const o = JSON.parse(line);
+          if (o.type === 'done') done = o;
+          if (o.type === 'error') throw new Error(o.message);
+        } catch (_) {}
+      }
+      if (!done) throw new Error('人声分离失败: ' + (r.err || '').slice(-200));
+      vocal = done.vocal;
+      inst = done.inst;
+    }
+
+    send2('loading-model');
+    // 释放显存：暂停 TTS 服务
+    try { killApi(); } catch (_) {}
+    await new Promise((res) => setTimeout(res, 2500));
+
+    const conv = path.join(work, 'converted_vocal.wav');
+    const idxArg = [];
+    if (opts.index) {
+      const ap = asciiIndexPath(opts.index);
+      if (ap) idxArg.push('--index', ap, '--index-rate', String(Number(opts.indexRate) || 0.75));
+    } else {
+      idxArg.push('--index-rate', '0');
+    }
+    const env2 = Object.assign({}, process.env, {
+      PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1', PYTHONUNBUFFERED: '1',
+      RVC_CUDA_GRAPH: '0',
+      PYTHONPATH: root + ';' + path.join(payload, 'runtime', 'Lib', 'site-packages')
+    });
+    send2('converting');
+    const proc = spawn(rvcPy, ['-u', '-m', 'infer.cli', '--model', String(opts.model),
+      '--input', vocal, '--output', conv, '--f0-method', 'rmvpe',
+      '--pitch', String(Number(opts.pitch) || 0), '--format', 'wav', '--overwrite'].concat(idxArg),
+      { cwd: root, env: env2, windowsHide: true });
+    rvcProc = proc;
+    const res = await new Promise((resolve) => {
+      let err = '';
+      proc.stderr.on('data', (d) => { err += d; });
+      proc.on('close', (code) => resolve({ code, err }));
+    });
+    rvcProc = null;
+    if (res.code !== 0 || !fs.existsSync(conv)) throw new Error('转换失败: ' + (res.err || '').slice(-300));
+
+    send2('mixing');
+    let outFile = conv;
+    if (inst) {
+      outFile = path.join(outDir, `翻唱_${baseName}_${stamp}.wav`);
+      const filt = '[0:a]volume=1.0[v];[1:a]volume=0.85[i];[v][i]amix=inputs=2:duration=shortest:dropout_transition=2,loudnorm=I=-16:TP=-1.5:LRA=11';
+      const m = await runProc(ff, ['-y', '-v', 'error', '-i', conv, '-i', inst, '-filter_complex', filt, '-ar', '44100', '-ac', '2', outFile], {});
+      if (m.code !== 0) throw new Error('混音失败');
+    } else {
+      outFile = path.join(outDir, `翻唱_${baseName}_${stamp}_干声.wav`);
+      fs.copyFileSync(conv, outFile);
+    }
+
+    try { await boot(); } catch (_) {}
+    send2('done', { path: outFile });
+    return { ok: true, path: outFile, dir: work, vocal, inst };
+  } catch (err) {
+    try { await boot(); } catch (_) {}
+    log('翻唱失败：' + String(err.message || err));
+    return { ok: false, error: String(err.message || err) };
+  }
+});
 
 // ---------- 唱歌 ----------
 let singProc = null;
