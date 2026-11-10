@@ -140,7 +140,7 @@ module.exports = function initBook(deps) {
     fs.writeFileSync(metaTxt, metaLines.join('\n'), 'utf8');
 
     const plain = path.join(dir, 'plain.m4a');
-    let r = await run(ffmpeg(), ['-y', '-v', 'error', '-i', fullWav, '-c:a', 'aac', '-b:a', '96k', plain]);
+    let r = await run(ffmpeg(), ['-y', '-v', 'error', '-i', fullWav, '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11', '-c:a', 'aac', '-b:a', '96k', plain]);
     if (r.code !== 0) throw new Error('转码失败: ' + r.err);
     const out = path.join(dir, `${slug(name || meta.name || 'book')}.m4a`);
     r = await run(ffmpeg(), ['-y', '-v', 'error', '-i', plain, '-i', metaTxt, '-map_metadata', '1', '-map', '0:a', '-c', 'copy', out]);

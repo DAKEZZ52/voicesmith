@@ -174,6 +174,29 @@ async function redoChapter(ch) {
 
 function openOutput() { window.api.openOutput(); }
 
+async function resumeBook() {
+  if (!detail.value) return;
+  if (!props.ready) { error.value = '服务还没就绪'; return; }
+  error.value = '';
+  running.value = true;
+  done.value = 0;
+  try {
+    const c = await ctx();
+    const res = await window.api.bookResume({ dir: detail.value.dir, voice: c.voice, ref: c.ref, gapSec: Number(detail.value.gap) || 0 });
+    if (!res.ok) error.value = res.error;
+    else if (res.failures && res.failures.length) error.value = '还有 ' + res.failures.length + ' 句失败';
+  } catch (e) {
+    error.value = String(e.message || e);
+  } finally {
+    running.value = false;
+    await refreshHistory();
+    const d = await window.api.bookDetail({ dir: detail.value.dir });
+    if (d.ok) detail.value = Object.assign({ dir: detail.value.dir }, d);
+  }
+}
+
+function openDir(p) { window.api.openDir({ path: p }); }
+
 async function openBook(b) {
   if (b.m4a) await window.api.openPath(b.m4a);
   else if (b.dir) await window.api.openPath(b.dir);
@@ -227,7 +250,7 @@ async function openBook(b) {
       <div class="actions">
         <button class="primary" :disabled="running" @click="start">{{ running ? '合成中…' : '开始生成' }}</button>
         <button class="mini" :disabled="!running || stopping" @click="stop">{{ stopping ? '正在停止…' : '停止' }}</button>
-        <span class="muted hint">中断后再点「开始生成」会跳过已完成的句子，从断点续跑</span>
+        <span class="muted hint">中断后到下方「历史」里点「继续未完成」，已合成的句子会跳过</span>
       </div>
       <div v-if="exportInfo && exportInfo.status === 'done'" class="ok">已导出 m4a（带章节）：<span class="mono">{{ exportInfo.path }}</span></div>
       <div v-if="error" class="alert">{{ error }}</div>
@@ -256,6 +279,9 @@ async function openBook(b) {
         <div class="detail-head">
           <b>{{ detail.name }}</b>
           <span class="muted">{{ detail.chapters.length }} 章 · 点「重做」只重新合成该章并刷新 m4a</span>
+          <span class="spacer"></span>
+          <button class="mini" :disabled="running" @click="resumeBook">{{ running ? '处理中…' : '继续未完成' }}</button>
+          <button class="mini" @click="openDir(detail.dir)">打开本书目录</button>
         </div>
         <div class="chapter-list">
           <div v-for="c in detail.chapters" :key="c.index" class="chapter-row" :class="{ done: c.hasWav }">
@@ -283,7 +309,7 @@ async function openBook(b) {
 .meta-row { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11.5px; color: var(--muted-2); }
 .num { width: 64px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 3px 6px; font-size: 12px; }
 .detail { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
-.detail-head { display: flex; align-items: center; gap: 10px; font-size: 12.5px; margin-bottom: 8px; }
+.detail-head { display: flex; align-items: center; gap: 10px; font-size: 12.5px; margin-bottom: 8px; }\n.detail-head .spacer { flex: 1; }
 .detail-head .muted { font-size: 11px; }
 .chapter-row .state { width: 52px; }
 .chapter-list { max-height: 240px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
