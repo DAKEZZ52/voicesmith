@@ -6,6 +6,7 @@ const emit = defineEmits(['refresh']);
 const dir = ref('');
 const fileCount = ref(0);
 const expName = ref('myvoice');
+const voiceRole = ref('read');
 const s2Epochs = ref(8);
 const s1Epochs = ref(30);
 const batch = ref(2);
@@ -110,6 +111,7 @@ async function startTrain() {
     return;
   }
   phase.value = 'done';
+  try { await window.api.setVoiceRole({ name: expName.value.trim().toLowerCase(), role: voiceRole.value }); } catch (_) {}
   emit('refresh');
 }
 
@@ -145,6 +147,13 @@ function statusText(s) {
         <label>SoVITS 轮数<input type="number" min="4" max="50" v-model.number="s2Epochs" :disabled="busy" /></label>
         <label>GPT 轮数<input type="number" min="5" max="100" v-model="s1Epochs" :disabled="busy" /></label>
         <label>batch（6GB 显存填 1~2）<input type="number" min="1" max="8" v-model.number="batch" :disabled="busy" /></label>
+        <label>
+          用途
+          <select v-model="voiceRole" :disabled="busy">
+            <option value="read">朗读（念文章、有声书）</option>
+            <option value="sing">唱歌（翻唱用）</option>
+          </select>
+        </label>
       </div>
     </section>
 
