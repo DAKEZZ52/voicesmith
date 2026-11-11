@@ -21,13 +21,18 @@ const modelGroups = computed(() => {
   const map = new Map();
   for (const m of models.value) {
     const key = m.voice || 'other';
-    if (!map.has(key)) map.set(key, { voice: key, active: [], history: [] });
+    if (!map.has(key)) map.set(key, { voice: key, role: m.role, active: [], history: [] });
     (m.active ? map.get(key).active : map.get(key).history).push(m);
   }
   return [...map.values()].sort((a, b) => a.voice.localeCompare(b.voice));
 });
 const activeCount = computed(() => modelGroups.value.reduce((s, g) => s + g.active.length, 0));
 const historyCount = computed(() => modelGroups.value.reduce((s, g) => s + g.history.length, 0));
+
+async function setRole(name, role) {
+  await window.api.setVoiceRole({ name, role });
+  await refresh();
+}
 
 async function cleanHistory() {
   const targets = modelGroups.value.flatMap((g) => g.history);
@@ -122,6 +127,10 @@ async function checkUpdate() {
           <div class="group-head">
             <b>{{ g.voice }}</b>
             <span class="tag">使用中</span>
+            <select class="role-select" :value="g.role" @change="setRole(g.voice, $event.target.value)">
+              <option value="read">朗读用</option>
+              <option value="sing">唱歌用</option>
+            </select>
             <span class="muted" v-if="g.active.length === 2">SoVITS + GPT 成对</span>
             <span class="muted" v-else>缺少配对文件，可能无法合成</span>
           </div>
@@ -248,6 +257,7 @@ async function checkUpdate() {
   background: var(--accent-soft);
 }
 .group-head .muted { font-size: 10.5px; color: var(--muted-2); }
+.role-select { height: 22px; font-size: 10.5px; padding: 0 4px; border-radius: 6px; }
 .group-head.hist b { color: var(--muted); }
 .row.hist { opacity: .7; }
 .hist-actions { display: flex; gap: 6px; padding: 10px 6px 2px; }

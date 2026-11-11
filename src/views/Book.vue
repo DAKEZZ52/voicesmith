@@ -126,7 +126,8 @@ async function refreshHistory() {
 
 async function ctx() {
   const voice = await window.api.voices();
-  const cur = (voice.pairs || [])[0] || null;
+  const list = voice.pairs || [];
+  const cur = list.find((v) => v.role === 'read') || list[0] || null;
   const refs = await window.api.refs();
   const ref = refs && refs.length ? refs[0] : null;
   if (!cur || !ref) throw new Error('缺少音色或参考音频');

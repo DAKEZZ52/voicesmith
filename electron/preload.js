@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('api', {
   deleteOutput: (payload) => ipcRenderer.invoke('outputs:delete', payload),
   updateRefText: (payload) => ipcRenderer.invoke('update-ref-text', payload),
   selectVoice: (payload) => ipcRenderer.invoke('select-voice', payload),
+  setVoiceRole: (payload) => ipcRenderer.invoke('voices:set-role', payload),
   tts: (payload) => ipcRenderer.invoke('tts', payload),
   batchRun: (payload) => ipcRenderer.invoke('batch-run', payload),
   batchCancel: () => ipcRenderer.invoke('batch-cancel'),

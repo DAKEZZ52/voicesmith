@@ -982,8 +982,20 @@ async function runSelfTest() {
 
 // ---------- voices / refs ----------
 
+function voiceRoles() {
+  const cfg = readConfig();
+  return (cfg && cfg.voiceRoles) || {};
+}
+
+// 没设置过就按名字猜：名字里带 sing / 唱 的按唱歌音色算
+function guessRole(name, roles) {
+  if (roles && roles[name]) return roles[name];
+  return /sing|唱/i.test(name) ? 'sing' : 'read';
+}
+
 function listVoices() {
   const root = payloadRoot();
+  const roles = voiceRoles();
   const collect = (prefix, ext) => {
     const map = new Map(); // key -> { rel, mtime }
     if (!fs.existsSync(root)) return map;
@@ -1011,6 +1023,7 @@ function listVoices() {
     const g = gpt.get(key);
     pairs.push({
       name: key,
+      role: guessRole(key, roles),
       sovits: s.rel,
       gpt: g ? g.rel : '',
       sovitsFile: path.basename(s.rel),
@@ -1157,6 +1170,17 @@ ipcMain.handle('state', () => ({
 }));
 ipcMain.handle('boot', async () => { await boot(); return true; });
 ipcMain.handle('voices', () => (payloadReady() ? listVoices() : { pairs: [], sovits: [], gpt: [] }));
+ipcMain.handle('voices:set-role', (_e, { name, role }) => {
+  try {
+    const map = Object.assign({}, voiceRoles());
+    if (role === 'read' || role === 'sing') map[String(name)] = role;
+    else delete map[String(name)];
+    writeConfig({ voiceRoles: map });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+});
 ipcMain.handle('refs', () => seedRefs());
 ipcMain.handle('open-folder', () => shell.openPath(payloadRoot()));
 ipcMain.handle('open-logs', () => shell.openPath(path.join(app.getPath('userData'), 'logs')));

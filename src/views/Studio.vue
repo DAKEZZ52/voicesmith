@@ -98,7 +98,14 @@ const splitOptions = [
 
 let timer = null;
 
-watch(mode, () => { error.value = ''; });
+watch(mode, () => {
+  error.value = '';
+  const readMode = mode.value === 'single' || mode.value === 'batch' || mode.value === 'book';
+  if (!readMode) return;
+  if (!currentVoice.value || currentVoice.value.role !== 'sing') return;
+  const read = voices.value.find((v) => v.role === 'read');
+  if (read) pickVoice(read);
+});
 
 const charCount = computed(() => text.value.replace(/\s/g, '').length);
 const canRun = computed(() => ready.value && !running.value && text.value.trim() && currentRef.value && currentVoice.value);
@@ -272,7 +279,10 @@ onMounted(async () => {
       ready.value = true;
       error.value = '';
       // 服务刚就绪：把选中/首个音色应用到后端
-      if (first && voices.value.length && !voiceApplied) pickVoice(voices.value[0]);
+      if (first && voices.value.length && !voiceApplied) {
+        const target = currentVoice.value || voices.value.find((x) => x.role === 'read') || voices.value[0];
+        pickVoice(target);
+      }
     }
   });
   window.api.on('log', (l) => {
@@ -305,8 +315,9 @@ onMounted(async () => {
   voices.value = v.pairs || [];
   // 服务没就绪时不要调 /set_*_weights，否则会报 ECONNREFUSED；
   // 等 phase=ready 事件到来再应用。
-  if (ready.value && voices.value.length) await pickVoice(voices.value[0]);
-  else if (voices.value.length) currentVoice.value = voices.value[0];
+  const initial = voices.value.find((x) => x.role === 'read') || voices.value[0];
+  if (ready.value && initial) await pickVoice(initial);
+  else if (initial) currentVoice.value = initial;
 
   const r = await window.api.refs();
   refs.value = r || [];
@@ -549,6 +560,7 @@ function replay(item) {
           >
             <span class="voice-dot"></span>
             <span class="voice-name">{{ v.name }}</span>
+            <span class="voice-role" :class="v.role">{{ v.role === 'sing' ? '唱歌' : '朗读' }}</span>
             <span class="voice-tag">{{ v.gpt ? '已训练' : '仅 SoVITS' }}</span>
           </button>
           <div v-if="!voices.length" class="empty">没有找到模型权重</div>
@@ -844,6 +856,16 @@ function replay(item) {
 .voice.active .voice-dot { background: var(--accent); }
 .voice-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .voice-tag { font-size: 10px; color: var(--muted-2); }
+.voice-role {
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted-2);
+  flex: 0 0 auto;
+}
+.voice-role.read { color: #7fb6e8; border-color: rgba(127, 182, 232, .35); }
+.voice-role.sing { color: var(--accent); border-color: var(--accent-line); }
 
 .ref-row { display: flex; align-items: center; gap: 1px; }
 .ref-row .ref { flex: 1; min-width: 0; }
