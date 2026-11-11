@@ -372,6 +372,295 @@ async function runSelfTest() {
     } catch (_) {}
   };
 
+  if (process.env.GSO_QA === '1') {
+    const errors = [];
+    mainWindow.webContents.on('console-message', (_e, level, message) => {
+      if (level >= 2) errors.push(String(message).slice(0, 200));
+    });
+    const js = (code) => mainWindow.webContents.executeJavaScript(code);
+    const out = [];
+    const rec = (name, ok, detail) => out.push({ name, ok, detail: String(detail || '').slice(0, 200) });
+
+    try {
+      for (let i = 0; i < 90 && phase !== 'ready'; i += 1) await new Promise((r) => setTimeout(r, 2000));
+      rec('phase', phase === 'ready', phase);
+
+      const api = await js(`(async () => {
+        const r = {};
+        try { r.voices = (await window.api.voices()).pairs.length; } catch (e) { r.voicesErr = String(e); }
+        try { r.refs = (await window.api.refs()).length; } catch (e) { r.refsErr = String(e); }
+        try { r.models = (await window.api.listModels()).length; } catch (e) { r.modelsErr = String(e); }
+        try { r.outputs = (await window.api.listOutputs()).length; } catch (e) { r.outputsErr = String(e); }
+        try { r.rvc = (await window.api.rvcInfo()).ok; } catch (e) { r.rvcErr = String(e); }
+        try {
+          const b = await window.api.bookParse({ text: '第一章 开始\\n今天天气不错。我们出发吧。\\n第二章 结束\\n路上很安静。', maxChars: 3000 });
+          r.chapters = b.chapters ? b.chapters.length : -1;
+          r.bookSentences = b.chapters ? b.chapters.reduce((s, c) => s + c.sentences.length, 0) : -1;
+        } catch (e) { r.bookErr = String(e); }
+        return r;
+      })()`);
+      rec('voices', api.voices >= 1, JSON.stringify(api));
+      rec('refs', api.refs >= 1, api.refs);
+      rec('models', api.models >= 4, api.models);
+      rec('outputs', api.outputs >= 0, api.outputs);
+      rec('rvc', api.rvc === true, api.rvc);
+      rec('bookParse', api.chapters === 2 && api.bookSentences >= 3, 'chapters=' + api.chapters + ' sentences=' + api.bookSentences);
+
+      // 逐个标签页点开，检查是否渲染 + 有没有报错
+      const tabs = ['单句', '批量', '音频书', '翻唱', '训练', '设置'];
+      for (const t of tabs) {
+        const res = await js(`(async () => {
+          const wait = (ms) => new Promise(r => setTimeout(r, ms));
+          const btn = [...document.querySelectorAll('.seg button')].find(b => b.textContent.trim() === '${t}');
+          if (!btn) return { ok: false, reason: 'no-tab' };
+          btn.click();
+          await wait(700);
+          const main = document.querySelector('main');
+          return { ok: !!(main && main.innerText.trim().length > 20), len: main ? main.innerText.trim().length : 0 };
+        })()`);
+        rec('tab:' + t, res.ok, JSON.stringify(res));
+        await snap('qa-' + t + '.png');
+      }
+
+      // 使用指南 F1
+      const guide = await js(`(async () => {
+        const wait = (ms) => new Promise(r => setTimeout(r, ms));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F1' }));
+        await wait(500);
+        const open = !!document.querySelector('.guide');
+        const esc = new KeyboardEvent('keydown', { key: 'Escape' });
+        window.dispatchEvent(esc);
+        await wait(400);
+        return { open, closed: !document.querySelector('.guide') };
+      })()`);
+      rec('guide', guide.open && guide.closed, JSON.stringify(guide));
+
+      // 主题切换
+      const theme = await js(`(async () => {
+        const wait = (ms) => new Promise(r => setTimeout(r, ms));
+        window.dispatchEvent(new CustomEvent('vs-theme', { detail: 'light' }));
+        await wait(300);
+        const bg = getComputedStyle(document.body).backgroundColor;
+        window.dispatchEvent(new CustomEvent('vs-theme', { detail: 'warm' }));
+        await wait(300);
+        return bg;
+      })()`);
+      rec('theme', /^rgb\(24[0-9]|^rgb\(25[0-9]/.test(theme), theme);
+
+      rec('consoleErrors', errors.length === 0, errors.slice(0, 5).join(' | '));
+    } catch (err) {
+      rec('qa', false, String(err).slice(0, 300));
+    }
+    if (process.env.GSO_QA_FULL === '1') {
+      const refs = await js('window.api.refs()');
+      const ref = refs && refs[0] ? refs[0] : null;
+      rec('ref:list', !!ref, ref ? ref.name : 'no-ref');
+
+      if (ref) {
+        const t0 = Date.now();
+        const single = await js(`(async () => {
+          const wait = (ms) => new Promise(r => setTimeout(r, ms));
+          const tabOne = [...document.querySelectorAll('.seg button')].find(b => b.textContent.trim() === '单句');
+          if (tabOne) { tabOne.click(); await wait(800); }
+          const ta = document.querySelector('textarea');
+          if (!ta) return { ok: false, reason: 'no-textarea' };
+          ta.value = '这是一次自动测试。';
+          ta.dispatchEvent(new Event('input', { bubbles: true }));
+          await wait(300);
+          const btn = [...document.querySelectorAll('button')].find(b => (b.textContent || '').includes('合成语音'));
+          if (!btn) return { ok: false, reason: 'no-button' };
+          if (btn.disabled) return { ok: false, reason: 'disabled' };
+          btn.click();
+          for (let i = 0; i < 90; i++) {
+            await wait(1000);
+            const a = document.querySelector('audio');
+            if (a && a.src && a.src.indexOf('data:audio') === 0) return { ok: true, size: a.src.length };
+          }
+          return { ok: false, reason: 'timeout' };
+        })()`);
+        rec('tts:single', single.ok, JSON.stringify(single) + ' ' + ((Date.now() - t0) / 1000).toFixed(0) + 's');
+
+        const trim = await js(`(async () => {
+          try {
+            const r = await window.api.trimRef({ src: ${JSON.stringify(ref.path)}, start: 0, end: 4, name: 'qa-trim', save: true });
+            return r;
+          } catch (e) { return { ok: false, error: String(e) }; }
+        })()`);
+        rec('ref:trim', trim && trim.ok, JSON.stringify(trim).slice(0, 120));
+        if (trim && trim.ok && trim.path) {
+          const del = await js(`window.api.deleteRef({ path: ${JSON.stringify(trim.path)} })`);
+          rec('ref:delete', del && del.ok !== false, JSON.stringify(del).slice(0, 120));
+        }
+
+        const batch = await js(`(async () => {
+          const wait = (ms) => new Promise(r => setTimeout(r, ms));
+          const tabs = [...document.querySelectorAll('.seg button')];
+          const tb = tabs.find(b => b.textContent.trim() === '批量');
+          if (!tb) return { ok: false, reason: 'no-tab' };
+          tb.click();
+          await wait(700);
+          const ta = document.querySelector('textarea');
+          if (!ta) return { ok: false, reason: 'no-textarea' };
+          ta.value = '第一句测试。第二句测试。';
+          ta.dispatchEvent(new Event('input', { bubbles: true }));
+          await wait(300);
+          const mk = [...document.querySelectorAll('button')].find(b => (b.textContent || '').includes('重建队列'));
+          if (!mk) return { ok: false, reason: 'no-build' };
+          mk.click();
+          await wait(700);
+          const rows = document.querySelectorAll('.q-row').length;
+          if (!rows) return { ok: false, reason: 'queue-empty' };
+          const run = [...document.querySelectorAll('button')].find(b => (b.textContent || '').includes('开始批量合成'));
+          if (!run) return { ok: false, reason: 'no-run' };
+          if (run.disabled) return { ok: false, reason: 'run-disabled' };
+          run.click();
+          for (let i = 0; i < 180; i++) {
+            await wait(1000);
+            const states = [...document.querySelectorAll('.q-state')].map(el => el.textContent.trim());
+            const done = states.filter(s => s === '完成').length;
+            const failed = states.filter(s => s === '失败').length;
+            if (states.length && done + failed === states.length) {
+              return { ok: done > 0, done, failed, rows: states.length, sec: i + 1 };
+            }
+          }
+          return { ok: false, reason: 'timeout' };
+        })()`);
+        rec('batch:run', batch.ok, JSON.stringify(batch));
+      }
+
+      const book = await js(`(async () => {
+        try {
+          const p = await window.api.bookParse({ text: '第一章 测试\\n今天天气不错。我们出发吧。\\n第二章 测试\\n路上很安静。', maxChars: 3000 });
+          if (!p.ok) return { ok: false, error: 'parse failed' };
+          const voices = (await window.api.voices()).pairs;
+          const v = voices[0];
+          const refs = await window.api.refs();
+          const r = await window.api.bookStart({
+            name: 'QA有声书',
+            chapters: p.chapters.map(c => ({ index: c.index, title: c.title, chars: c.chars, sentences: c.sentences.slice() })),
+            voice: { sovits: v.sovits, gpt: v.gpt, name: v.name },
+            ref: { path: refs[0].path, text: refs[0].text || '' },
+            params: { speed: 1 },
+            gapSec: 0.4
+          });
+          return { ok: r.ok !== false, dir: r.dir, m4a: !!r.m4a, srt: !!r.srt, failures: (r.failures || []).length, error: r.error || '' };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      })()`);
+      rec('book:start', book.ok, JSON.stringify(book).slice(0, 200));
+
+      const inspect = await js(`(async () => {
+        try {
+          const r = await window.api.trainInspect({ dir: ${JSON.stringify(path.join(payloadRoot(), 'output'))} });
+          return { ok: r.ok !== false, files: r.count, error: r.error || '' };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      })()`);
+      rec('train:inspect', inspect.ok && inspect.files > 0, JSON.stringify(inspect).slice(0, 160));
+
+      const guard = await js(`(async () => {
+        try {
+          const models = await window.api.listModels();
+          const active = models.find(m => m.active);
+          if (!active) return { ok: false, reason: 'no-active' };
+          const r = await window.api.deleteModel({ path: active.path });
+          return { blocked: !r.ok, msg: r.error || '' };
+        } catch (e) { return { blocked: false, msg: String(e) }; }
+      })()`);
+      rec('models:guard', guard.blocked === true, JSON.stringify(guard).slice(0, 160));
+    }
+    if (process.env.GSO_QA_EXTRA === '1') {
+      const resume = await js(`(async () => {
+        try {
+          const list = await window.api.bookList();
+          if (!list.length) return { ok: false, reason: 'no-book' };
+          const d = list[0];
+          const voices = (await window.api.voices()).pairs;
+          const refs = await window.api.refs();
+          const r = await window.api.bookResume({ dir: d.dir, voice: voices[0], ref: { path: refs[0].path, text: refs[0].text || '' }, gapSec: 0.4 });
+          return { ok: r.ok !== false, m4a: !!r.m4a, srt: !!r.srt, error: r.error || '' };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      })()`);
+      rec('book:resume', resume.ok, JSON.stringify(resume).slice(0, 160));
+
+      const cancel = await js(`(async () => {
+        const wait = (ms) => new Promise(r => setTimeout(r, ms));
+        const tb = [...document.querySelectorAll('.seg button')].find(b => b.textContent.trim() === '批量');
+        if (tb) tb.click();
+        await wait(700);
+        const ta = document.querySelector('textarea');
+        if (!ta) return { ok: false, reason: 'no-textarea' };
+        ta.value = '第一句。第二句。第三句。第四句。';
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        await wait(300);
+        const mk = [...document.querySelectorAll('button')].find(b => (b.textContent || '').includes('重建队列'));
+        mk.click();
+        await wait(500);
+        const run = [...document.querySelectorAll('button')].find(b => (b.textContent || '').includes('开始批量合成'));
+        if (!run || run.disabled) return { ok: false, reason: 'cannot-run' };
+        run.click();
+        await wait(3500);
+        const stop = [...document.querySelectorAll('button')].find(b => (b.textContent || '').trim() === '取消');
+        if (!stop) return { ok: false, reason: 'no-cancel' };
+        stop.click();
+        for (let i = 0; i < 60; i++) {
+          await wait(500);
+          const again = [...document.querySelectorAll('button')].find(b => (b.textContent || '').includes('开始批量合成'));
+          if (again && !again.disabled) {
+            const states = [...document.querySelectorAll('.q-state')].map(e => e.textContent.trim());
+            return { ok: true, states };
+          }
+        }
+        return { ok: false, reason: 'still-running' };
+      })()`);
+      rec('batch:cancel', cancel.ok, JSON.stringify(cancel).slice(0, 200));
+
+      const badDir = await js(`window.api.openDir({ path: 'D:\\\\__nope__' })`);
+      rec('openDir:bad', badDir && badDir.ok === false, JSON.stringify(badDir));
+
+      const outputs = await js(`(async () => {
+        const list = await window.api.listOutputs();
+        if (!list.length) return { ok: false, reason: 'no-outputs' };
+        return { ok: true, idempotent: list.every(o => typeof o.dur === 'number' && o.sizeMB >= 0) };
+      })()`);
+      rec('outputs:shape', outputs.ok && outputs.idempotent, JSON.stringify(outputs));
+    }
+    if (process.env.GSO_QA_TRAIN === '1') {
+      const src = path.join(process.env.APPDATA, 'weavevoice', 'refs');
+      const dirs = fs.readdirSync(src).filter((f) => /\.wav$/i.test(f)).slice(0, 3);
+      const inputDir = path.join(app.getPath('temp'), 'qa-train-src');
+      fs.mkdirSync(inputDir, { recursive: true });
+      for (const f of dirs) fs.copyFileSync(path.join(src, f), path.join(inputDir, f));
+      const steps = [];
+      mainWindow.webContents.on('ipc-message', () => {});
+      const t0 = Date.now();
+      const r = await js(`window.api.trainPrepare({ inputDir: ${JSON.stringify(inputDir)}, expName: 'qa_voice' })`);
+      rec('train:prepare', !!(r && r.ok), JSON.stringify(r || {}).slice(0, 200) + ' ' + ((Date.now() - t0) / 1000).toFixed(0) + 's');
+      const list = await js(`window.api.trainInspect({ dir: ${JSON.stringify(path.join(payloadRoot(), 'output', 'qa_voice_sliced'))} })`);
+      rec('train:sliced', !!(list && list.ok && list.count > 0), JSON.stringify(list).slice(0, 120));
+    }
+
+    if (process.env.GSO_QA_FIT === '1') {
+      const events = [];
+      mainWindow.webContents.executeJavaScript('1');
+      const t0 = Date.now();
+      const p = js(`window.api.trainStart({ expName: 'qa_voice', s2Epochs: 1, s1Epochs: 10, batch: 1 })`);
+      // 等 100 秒看它有没有真跑起来，然后取消
+      await new Promise((r) => setTimeout(r, Number(process.env.GSO_QA_FIT_WAIT) || 100000));
+      const stats = await js(`(async () => {
+        try {
+          const s = await window.api.state();
+          return { phase: s.phase };
+        } catch (e) { return { error: String(e) }; }
+      })()`);
+      const cancel = await js('window.api.trainCancel()');
+      const r = await p;
+      rec('train:start', !!(r && r.ok), JSON.stringify(r || {}).slice(0, 240) + ' ' + ((Date.now() - t0) / 1000).toFixed(0) + 's phase=' + (stats.phase || stats.error));
+    }
+    log('QA_RESULT ' + JSON.stringify({ pass: out.filter((x) => x.ok).length, total: out.length, out }));
+    await snap('qa-final.png');
+    setTimeout(() => app.exit(0), 600);
+    return;
+  }
+
   if (process.env.GSO_RVC_TEST === '1') {
     try {
       for (let i = 0; i < 90 && phase !== 'ready'; i += 1) await new Promise((r) => setTimeout(r, 2000));
@@ -792,6 +1081,19 @@ function seedRefs() {
     if (dirty) {
       try { list = normalizeRefs(list); } catch (_) {}
     }
+    // 补收目录里存在但索引里没有的 wav（版本升级/迁移后容易丢）
+    try {
+      const dir = refsDir();
+      const known = new Set(list.map((r) => path.basename(r.path).toLowerCase()));
+      let added = 0;
+      for (const f of fs.readdirSync(dir)) {
+        if (!/\.wav$/i.test(f)) continue;
+        if (known.has(f.toLowerCase())) continue;
+        list.push({ name: f.replace(/\.wav$/i, ''), path: path.join(dir, f), text: '' });
+        added += 1;
+      }
+      if (added) writeRefs(list);
+    } catch (_) {}
     return list;
   }
   const seedDir = P('output/参考音频');
@@ -1060,8 +1362,17 @@ ipcMain.handle('trim-ref', async (_e, { src, start, end, name, save }) => {
     let out;
     if (save) {
       const safe = String(name || 'ref').replace(/[\\/:*?"<>|]/g, '_').slice(0, 40);
-      out = path.join(refsDir(), `${safe}_${dur.toFixed(1)}s.wav`);
       fs.mkdirSync(refsDir(), { recursive: true });
+      // 不覆盖已有文件，更不覆盖源文件
+      const base = path.join(refsDir(), `${safe}_${dur.toFixed(1)}s`);
+      let candidate = `${base}.wav`;
+      let n = 2;
+      while (fs.existsSync(candidate) || path.resolve(candidate) === path.resolve(String(src || ''))) {
+        candidate = `${base}-${n}.wav`;
+        n += 1;
+        if (n > 99) break;
+      }
+      out = candidate;
     } else {
       out = path.join(app.getPath('temp'), `gso-preview-${Date.now()}.wav`);
     }
@@ -1198,6 +1509,16 @@ ipcMain.handle('models:list', () => {
 ipcMain.handle('models:delete', (_e, { path: p }) => {
   try {
     if (!/weights/i.test(p)) throw new Error('路径不在权重目录内');
+    const active = new Set();
+    try {
+      for (const pair of listVoices().pairs) {
+        if (pair.sovits) active.add(pair.sovits.split('/').pop());
+        if (pair.gpt) active.add(pair.gpt.split('/').pop());
+      }
+    } catch (_) {}
+    if (active.has(path.basename(p))) {
+      return { ok: false, error: '这是当前音色正在使用的权重，换掉或训练新版本后再删' };
+    }
     fs.unlinkSync(p);
     return { ok: true };
   } catch (err) {
@@ -1372,7 +1693,7 @@ function yamlStr(s) {
   return '"' + esc + '"';
 }
 
-function runPy(args, env, onLine) {
+function runPy(args, env, onLine, opts) {
   return new Promise((resolve) => {
     const root = payloadRoot();
     const rt = pythonRuntime(root);
@@ -1384,8 +1705,11 @@ function runPy(args, env, onLine) {
       NLTK_DATA: path.join(root, 'runtime', 'nltk_data'),
       OPEN_JTALK_DICT_DIR: path.join(process.env.LOCALAPPDATA || root, 'GPT-SoVITS', 'open_jtalk_dic_utf_8-1.11')
     }, env || {});
-    if (rt.useBase) e.PYTHONPATH = rt.site;
-    const p = spawn(py, args, { cwd: root, env: e, windowsHide: true });
+    // 工具脚本要能 import tools.* / text.*：把 payload 根和目标脚本目录都放进 PYTHONPATH
+    const extra = opts && opts.pyPath ? ';' + opts.pyPath : '';
+    e.PYTHONPATH = rt.useBase ? (root + ';' + rt.site + extra) : (root + extra);
+    const cwd = (opts && opts.cwd) || root;
+    const p = spawn(py, args, { cwd, env: e, windowsHide: true });
     trainProc = p;
     let out = '';
     const handle = (d) => {
@@ -1486,11 +1810,11 @@ ipcMain.handle('train:prepare', async (_e, opts) => {
     _CUDA_VISIBLE_DEVICES: '0',
     is_half: 'True',
     version: 'v2Pro',
-    bert_pretrained_dir: bert,
-    cnhubert_base_dir: cnhubert,
-    sv_path: sv,
-    pretrained_s2G: s2g,
-    s2config_path: 'GPT_SoVITS/configs/s2v2Pro.json'
+    bert_pretrained_dir: path.join(root, bert),
+    cnhubert_base_dir: path.join(root, cnhubert),
+    sv_path: path.join(root, sv),
+    pretrained_s2G: path.join(root, s2g),
+    s2config_path: path.join(root, 'GPT_SoVITS/configs/s2v2Pro.json')
   };
   const steps = [
     ['text', 'GPT_SoVITS/prepare_datasets/1-get-text.py'],
@@ -1501,8 +1825,16 @@ ipcMain.handle('train:prepare', async (_e, opts) => {
   for (const [name, script] of steps) {
     if (trainCanceled) return { ok: false, error: '已取消' };
     step({ step: name, status: 'running' });
-    r = await runPy([script], env, line);
-    if (r.code !== 0) { step({ step: name, status: 'failed' }); return { ok: false, error: name + ' 步骤失败' }; }
+    const rel = script.replace(/^GPT_SoVITS[\\\\/]/, '');
+    // 脚本里的相对路径（G2PWModel、pretrained_models）都以 payload 根为基准
+    r = await runPy([script], env, line, {
+      cwd: root,
+      pyPath: path.join(root, 'GPT_SoVITS') + ';' + path.join(root, 'GPT_SoVITS', 'eres2net')
+    });
+    if (r.code !== 0) {
+      step({ step: name, status: 'failed' });
+      return { ok: false, error: name + ' 步骤失败：' + String(r.out || '').slice(-400) };
+    }
     step({ step: name, status: 'done' });
   }
 
@@ -1608,7 +1940,12 @@ ipcMain.handle('train:start', async (_e, opts) => {
   const sovitsOut = (() => {
     try { return fs.readdirSync(path.join(root, 'SoVITS_weights_v2Pro')).filter((f) => f.startsWith(expName + '_e')); } catch (_) { return []; }
   })();
-  if (trainCanceled || (r.code !== 0 && !sovitsOut.length)) {
+  if (trainCanceled) {
+    step({ step: 'sovits', status: 'failed' });
+    await restoreApi();
+    return { ok: false, error: '已取消' };
+  }
+  if (r.code !== 0 && !sovitsOut.length) {
     step({ step: 'sovits', status: 'failed' });
     await restoreApi();
     return { ok: false, error: 'SoVITS 训练失败：' + r.out.slice(-300) };

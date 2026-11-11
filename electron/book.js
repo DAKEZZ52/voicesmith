@@ -348,6 +348,7 @@ module.exports = function initBook(deps) {
         let meta = {};
         try { meta = JSON.parse(fs.readFileSync(path.join(dir, 'book.json'), 'utf8')); } catch (_) {}
         const m4a = fs.readdirSync(dir).find((f) => f.endsWith('.m4a'));
+        const srt = fs.readdirSync(dir).find((f) => f.endsWith('.srt')) || '';
         out.push({
           dir, name: meta.name || d.name,
           chapters: (meta.chapters || []).length,
