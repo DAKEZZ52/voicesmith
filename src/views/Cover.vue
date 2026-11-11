@@ -1,7 +1,10 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
-const props = defineProps({ ready: { type: Boolean, default: false } });
+const props = defineProps({
+  ready: { type: Boolean, default: false },
+  pitchHint: { type: Number, default: null }
+});
 
 const info = ref({ ok: false, models: [], indices: [], root: '' });
 const inputFile = ref('');
@@ -10,6 +13,14 @@ const model = ref('');
 const index = ref('');
 const indexRate = ref(0.75);
 const pitch = ref(0);
+const hintText = ref('');
+
+watch(() => props.pitchHint, (v) => {
+  if (v === null || v === undefined) return;
+  pitch.value = Number(v) || 0;
+  const label = pitch.value > 0 ? '升 ' + pitch.value : (pitch.value < 0 ? '降 ' + (-pitch.value) : '原调');
+  hintText.value = '已按测声结果设为 ' + label + '（' + pitch.value + ' 个半音）';
+}, { immediate: true });
 const separate = ref(true);
 const running = ref(false);
 const stage = ref('');
@@ -187,6 +198,7 @@ function openRvc() { if (info.value.root) window.api.openDir({ path: info.value.
           </button>
           <button class="mini" :disabled="!running" @click="stop">停止</button>
           <span class="muted" v-if="running">首次运行要加载模型，约 10~60 秒</span>
+          <span class="hint-text" v-else-if="hintText">{{ hintText }}</span>
         </div>
 
         <div v-if="result" class="ok">
@@ -228,6 +240,7 @@ function openRvc() { if (info.value.root) window.api.openDir({ path: info.value.
 
 <style scoped>
 .cover { display: flex; flex-direction: column; gap: 14px; }
+.hint-text { font-size: 11px; color: var(--accent); }
 
 .score {
   margin-top: 12px;

@@ -771,6 +771,10 @@ async function runSelfTest() {
           const go = [...document.querySelectorAll('button')].find(b => (b.textContent || '').includes('开始分析'));
           if (go && !go.disabled) go.click();
           for (let i = 0; i < 90; i++) { await wait(1000); if (document.querySelector('.range')) break; }
+          if ('${process.env.GSO_PROFILE_GO || ''}' === '1') {
+            const goBtn = [...document.querySelectorAll('.song-go')].find(b => !b.disabled);
+            if (goBtn) { goBtn.click(); await wait(1200); }
+          }
         }
         if ('${process.env.GSO_SHOT_MODE || ''}' === 'guide') {
           const gb = [...document.querySelectorAll('button')].find(b => (b.textContent || '').trim() === '使用指南');

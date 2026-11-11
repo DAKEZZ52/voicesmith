@@ -34,6 +34,12 @@ const comfortWidth = computed(() => {
   return ((profile.value.p80 - profile.value.p20) / (NOTE_HIGH - NOTE_LOW)) * 100;
 });
 
+const looksMixed = computed(() => {
+  const p = profile.value;
+  if (!p) return false;
+  return p.voiced < 70 || p.harmonicRatio < 2.5;
+});
+
 const recommendations = computed(() => {
   const p = profile.value;
   if (!p) return [];
@@ -96,6 +102,10 @@ async function useRefAudio() {
   fileName.value = useRef.value.split(/[\\/]/).pop();
 }
 
+function goCover(shift) {
+  window.dispatchEvent(new CustomEvent('vs-open-cover', { detail: { pitch: Number(shift) || 0 } }));
+}
+
 async function analyze() {
   if (!file.value) { error.value = '先选一段音频'; return; }
   error.value = '';
@@ -105,6 +115,7 @@ async function analyze() {
     const r = await window.api.profileAnalyze({ path: file.value, separate: separate.value });
     if (!r.ok) { error.value = r.error || '分析失败'; return; }
     profile.value = r.profile;
+    try { localStorage.setItem('vs-profile', JSON.stringify(r.profile)); } catch (_) {}
   } catch (e) {
     error.value = String(e.message || e);
   } finally {
@@ -145,6 +156,10 @@ async function analyze() {
       </div>
 
       <div v-if="error" class="alert">{{ error }}</div>
+      <div v-if="looksMixed" class="notice">
+        这段音频里伴奏或噪声偏多（发声占比 {{ profile ? profile.voiced : 0 }}%），测出来的音域可能偏低。
+        建议勾选「先分离人声」再测一次，或者直接给清唱。
+      </div>
     </section>
 
     <section v-if="profile" class="card">
@@ -185,8 +200,9 @@ async function analyze() {
           <span class="song-name">{{ s.name }}</span>
           <span class="song-artist">{{ s.artist }}</span>
           <span class="song-range mono">{{ s.range }}</span>
-          <span class="song-shift mono">{{ s.shift === 0 ? '原调' : s.label }}</span>
+          <span class="song-shift mono">{{ s.label }}</span>
           <span class="song-verdict" :class="'t' + s.tier">{{ s.verdict }}</span>
+          <button class="mini song-go" :disabled="!s.fits" @click="goCover(s.shift)">去翻唱</button>
         </div>
       </div>
     </section>
@@ -244,7 +260,7 @@ async function analyze() {
 .songs { display: flex; flex-direction: column; }
 .song {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 0.9fr 0.7fr 0.9fr;
+  grid-template-columns: 1.3fr 0.9fr 0.8fr 0.7fr 0.7fr 0.6fr;
   align-items: center;
   gap: 10px;
   height: 30px;
@@ -259,6 +275,17 @@ async function analyze() {
 .song-range { color: var(--muted); font-size: 11px; }
 .song-shift { color: var(--accent); font-size: 11px; }
 .song-verdict { color: var(--muted); font-size: 11px; text-align: right; }
+.song-go { justify-self: end; }
+.notice {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid rgba(217, 160, 91, .38);
+  background: rgba(217, 160, 91, .08);
+  color: #d8b083;
+  font-size: 11.5px;
+  line-height: 1.7;
+}
 .tips { margin: 0; padding-left: 16px; font-size: 12px; line-height: 1.9; color: var(--muted); }
 .tips li::marker { color: var(--muted-2); }
 </style>

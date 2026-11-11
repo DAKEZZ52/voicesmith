@@ -28,6 +28,7 @@ const showLog = ref(false);
 // ---- 批量 ----
 const hashMode = (String(location.hash || '').match(/mode=(\w+)/) || [])[1];
 const showGuide = ref(false);
+const coverPitch = ref(null);
 
 async function openOutput() {
   const r = await window.api.openOutput();
@@ -257,6 +258,11 @@ async function saveSelAsRef() {
 
 onMounted(async () => {
   window.addEventListener('vs-theme', () => { try { draw(); } catch (_) {} });
+  window.addEventListener('vs-open-cover', (e) => {
+    const d = e && e.detail ? e.detail : {};
+    coverPitch.value = typeof d.pitch === 'number' ? d.pitch : null;
+    mode.value = 'cover';
+  });
   window.addEventListener('keydown', (e) => {
     if (e.key === 'F1') { e.preventDefault(); showGuide.value = !showGuide.value; }
   });
@@ -610,7 +616,7 @@ function replay(item) {
       <Book v-else-if="mode === 'book'" :ready="ready" />
 
       <Profile v-else-if="mode === 'profile'" />
-      <Cover v-else-if="mode === 'cover'" :ready="ready" />
+      <Cover v-else-if="mode === 'cover'" :ready="ready" :pitch-hint="coverPitch" />
       <Settings v-else-if="mode === 'settings'" :voices-count="voices.length" @guide="showGuide = true" />
 
       <template v-else>
