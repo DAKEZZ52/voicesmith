@@ -914,6 +914,23 @@ ipcMain.handle('pick-text', async () => {
   }
 });
 
+// 选音频文件（翻唱用）
+ipcMain.handle('pick-audio', async () => {
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: '选择歌曲',
+    properties: ['openFile'],
+    filters: [
+      { name: '音频', extensions: ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'wma'] },
+      { name: '全部文件', extensions: ['*'] },
+    ],
+  });
+  if (r.canceled || !r.filePaths.length) return { ok: false, canceled: true };
+  const p = r.filePaths[0];
+  let sizeMB = 0;
+  try { sizeMB = +(fs.statSync(p).size / 1048576).toFixed(1); } catch (_) {}
+  return { ok: true, path: p, name: path.basename(p), sizeMB };
+});
+
 ipcMain.handle('import-ref', async () => {
   const r = await dialog.showOpenDialog(mainWindow, {
     title: '选择参考音频（3~10 秒）', properties: ['openFile'],

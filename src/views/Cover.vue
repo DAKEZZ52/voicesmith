@@ -49,10 +49,17 @@ async function refresh() {
 }
 
 async function pickAudio() {
-  const r = await window.api.pickAudio();
-  if (r.ok) {
-    inputFile.value = r.path;
-    fileName.value = r.path.split(/[\\/]/).pop();
+  try {
+    const r = await window.api.pickAudio();
+    if (r && r.ok) {
+      inputFile.value = r.path;
+      fileName.value = r.path.split(/[\\/]/).pop();
+      error.value = '';
+    } else if (r && r.error) {
+      error.value = r.error;
+    }
+  } catch (e) {
+    error.value = '打开文件选择失败：' + String(e.message || e);
   }
 }
 
