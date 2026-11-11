@@ -28,6 +28,11 @@ const showLog = ref(false);
 const hashMode = (String(location.hash || '').match(/mode=(\w+)/) || [])[1];
 const showGuide = ref(false);
 
+async function openOutput() {
+  const r = await window.api.openOutput();
+  if (r && r.ok === false) error.value = '打开输出目录失败：' + (r.error || '未知错误');
+}
+
 const mode = ref(['single', 'batch', 'book', 'cover', 'train', 'settings'].includes(hashMode) ? hashMode : 'single');
 const queue = ref([]);
 const batchRunning = ref(false);
@@ -570,7 +575,7 @@ function replay(item) {
       </div>
 
       <div class="sidebar-foot">
-        <button class="ghost" @click="window.api.openOutput()">输出目录</button>
+        <button class="ghost" @click="openOutput">输出目录</button>
         <button class="ghost" @click="checkUpdate">{{ updateLabel }}</button>
       </div>
       <pre v-if="showLog" class="log mono">{{ log.join('\n') }}</pre>
@@ -751,7 +756,7 @@ function replay(item) {
         <div class="path-row">
           <span class="mono path">{{ result.path }}</span>
           <button class="mini" @click="copyPath">复制路径</button>
-          <button class="mini" @click="window.api.openOutput()">打开目录</button>
+          <button class="mini" @click="openOutput">打开目录</button>
         </div>
       </section>
 

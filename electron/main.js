@@ -858,10 +858,17 @@ ipcMain.handle('open-path', (_e, { path: p }) => {
   } catch (err) { return { ok: false, error: String(err.message || err) }; }
 });
 ipcMain.handle('log-path', () => logPath);
-ipcMain.handle('open-output', () => {
+ipcMain.handle('open-output', async () => {
   const dir = path.join(payloadRoot(), 'output');
-  fs.mkdirSync(dir, { recursive: true });
-  shell.openPath(dir);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const err = await shell.openPath(dir);
+    if (err) { log('打开输出目录失败: ' + err); return { ok: false, error: err }; }
+    return { ok: true, path: dir };
+  } catch (e) {
+    log('打开输出目录异常: ' + e);
+    return { ok: false, error: String(e.message || e) };
+  }
 });
 
 ipcMain.handle('pick-payload', async () => {
