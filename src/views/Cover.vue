@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 const props = defineProps({ ready: { type: Boolean, default: false } });
 
@@ -19,7 +19,30 @@ const audioEl = ref(null);
 const logs = ref([]);
 let offs = [];
 
+const score = computed(() => {
+  const s = result.value && result.value.score;
+  if (!s || !s.ok) return null;
+  const corr = Number(s.corr) || 0;
+  const octave = Number(s.octave) || 0;
+  const voiced = Number(s.voiced) || 0;
+  let grade = 'good';
+  let label = '很搭';
+  if (corr < 0.7) { grade = 'bad'; label = '不搭'; }
+  else if (corr < 0.85) { grade = 'mid'; label = '一般'; }
+  const tips = [];
+  if (voiced && voiced < 65) tips.push('原唱偏轻声/气声，模型跟不稳，换一首更明亮、发声更实的歌会好很多');
+  if (octave >= 4) tips.push('音高跳变较多，把「变调」调 ±2 再试一次');
+  if (corr >= 0.85 && !tips.length) tips.push('这首很适合这个音色，可以直接用');
+  if (corr < 0.7 && voiced >= 65) tips.push('音色差异偏大，建议换歌，或先用 ±2 变调试 30 秒');
+  return {
+    corr, cents: s.cents, octave, voiced,
+    grade, label,
+    tip: tips.join('；')
+  };
+});
+
 const stageLabel = {
+  scoring: '对比音高…',
   separating: '分离人声…',
   'loading-model': '加载模型…',
   converting: '转换音色…',
@@ -28,6 +51,13 @@ const stageLabel = {
 };
 
 onMounted(async () => {
+  // 自动化测试用的入口：预先指定歌曲路径
+  const hashParams = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+  const preset = hashParams.get('clip') || '';
+  if (preset) {
+    inputFile.value = preset;
+    fileName.value = preset.split(/[\\\\/]/).pop();
+  }
   info.value = await window.api.rvcInfo();
   if (info.value.models && info.value.models.length) model.value = info.value.models[0].path;
   if (info.value.indices && info.value.indices.length) index.value = info.value.indices[0].path;
@@ -164,6 +194,21 @@ function openRvc() { if (info.value.root) window.api.openDir({ path: info.value.
           <button class="mini" @click="play">再播一次</button>
           <button class="mini" @click="openOutput">打开目录</button>
         </div>
+
+        <div v-if="score" class="score" :class="score.grade">
+          <div class="score-head">
+            <b>这首歌和音色的匹配度：{{ score.label }}</b>
+            <span class="score-num mono">{{ (score.corr * 100).toFixed(0) }}%</span>
+          </div>
+          <div class="score-grid">
+            <span>音高跟随 <b class="mono">{{ (score.corr * 100).toFixed(0) }}%</b></span>
+            <span>音准偏差 <b class="mono">{{ score.cents }} 音分</b></span>
+            <span>八度跳变 <b class="mono">{{ score.octave }}%</b></span>
+            <span>原唱发声 <b class="mono">{{ score.voiced }}%</b></span>
+          </div>
+          <p class="score-tip">{{ score.tip }}</p>
+        </div>
+
         <div v-if="error" class="alert">{{ error }}</div>
         <audio ref="audioEl" style="display:none"></audio>
       </template>
@@ -183,6 +228,27 @@ function openRvc() { if (info.value.root) window.api.openDir({ path: info.value.
 
 <style scoped>
 .cover { display: flex; flex-direction: column; gap: 14px; }
+
+.score {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--panel-2);
+}
+.score.good { border-color: rgba(79, 184, 154, .45); }
+.score.mid { border-color: rgba(217, 160, 91, .45); }
+.score.bad { border-color: rgba(228, 103, 95, .45); }
+.score-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.score-head b { font-size: 12.5px; font-weight: 600; }
+.score.good .score-head b { color: var(--ok); }
+.score.mid .score-head b { color: var(--warn); }
+.score.bad .score-head b { color: var(--err); }
+.score-num { font-size: 15px; font-weight: 650; }
+.score-grid { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 10px 0 8px; font-size: 11.5px; color: var(--muted); }
+.score-grid b { color: var(--text); font-weight: 550; }
+.score-tip { margin: 0; font-size: 11.5px; line-height: 1.7; color: var(--muted); }
+.score-tip:empty { display: none; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
 .head-actions { display: flex; align-items: center; gap: 8px; }
 .editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 24px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--line-soft); font-size: 11px; letter-spacing: .06em; color: var(--muted); }

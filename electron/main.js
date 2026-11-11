@@ -2200,6 +2200,8 @@ ipcMain.handle('rvc:convert', async (_e, opts) => {
     let inst = '';
     if (opts.separate !== false) {
       send2('separating');
+      const sepStart = Date.now();
+      log('翻唱：开始分离 ' + path.basename(input));
       const sepScript = app.isPackaged
         ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'py', 'uvr_separate.py')
         : path.join(__dirname, 'py', 'uvr_separate.py');
@@ -2217,6 +2219,7 @@ ipcMain.handle('rvc:convert', async (_e, opts) => {
         } catch (_) {}
       }
       if (!done) throw new Error('人声分离失败: ' + (r.err || '').slice(-200));
+      log('翻唱：分离完成 ' + Math.round((Date.now() - sepStart) / 1000) + 's code=' + r.code);
       vocal = done.vocal;
       inst = done.inst;
     }
@@ -2240,6 +2243,7 @@ ipcMain.handle('rvc:convert', async (_e, opts) => {
       PYTHONPATH: root + ';' + path.join(payload, 'runtime', 'Lib', 'site-packages')
     });
     send2('converting');
+    log('翻唱：开始转换 ' + path.basename(vocal));
     const proc = spawn(rvcPy, ['-u', '-m', 'infer.cli', '--model', String(opts.model),
       '--input', vocal, '--output', conv, '--f0-method', 'rmvpe',
       '--pitch', String(Number(opts.pitch) || 0), '--format', 'wav', '--overwrite'].concat(idxArg),
@@ -2251,6 +2255,7 @@ ipcMain.handle('rvc:convert', async (_e, opts) => {
       proc.on('close', (code) => resolve({ code, err }));
     });
     rvcProc = null;
+    log('翻唱：转换结束 code=' + res.code + ' 文件=' + (fs.existsSync(conv) ? '有' : '无'));
     if (res.code !== 0 || !fs.existsSync(conv)) throw new Error('转换失败: ' + (res.err || '').slice(-300));
 
     send2('mixing');
@@ -2265,9 +2270,26 @@ ipcMain.handle('rvc:convert', async (_e, opts) => {
       fs.copyFileSync(conv, outFile);
     }
 
+    // 打分：源人声 vs 转换人声，告诉用户这首歌和音色搭不搭
+    send2('scoring');
+    let score = null;
+    try {
+      const scoreScript = app.isPackaged
+        ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'py', 'rvc_score.py')
+        : path.join(__dirname, 'py', 'rvc_score.py');
+      const envS = Object.assign({}, process.env, { PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' });
+      if (py.useBase) envS.PYTHONPATH = py.site;
+      const sr = await runProc(py.exe, ['-u', scoreScript, vocal, conv], { env: envS });
+      for (const line of sr.out.split(/\r?\n/)) {
+        const s = line.trim();
+        if (!s.startsWith('{')) continue;
+        try { const o = JSON.parse(s); if (o.ok) score = o; } catch (_) {}
+      }
+    } catch (_) {}
+
     try { await boot(); } catch (_) {}
-    send2('done', { path: outFile });
-    return { ok: true, path: outFile, dir: work, vocal, inst };
+    send2('done', { path: outFile, score });
+    return { ok: true, path: outFile, dir: work, vocal, inst, score };
   } catch (err) {
     try { await boot(); } catch (_) {}
     log('翻唱失败：' + String(err.message || err));
@@ -2289,7 +2311,8 @@ function createWindow() {
 
   if (DEV_URL) mainWindow.loadURL(DEV_URL);
   else if (process.env.GSO_SHOT_MODE) {
-    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'mode=' + (process.env.GSO_SHOT_MODE === 'guide' ? 'settings' : process.env.GSO_SHOT_MODE) });
+    const shotHash = 'mode=' + (process.env.GSO_SHOT_MODE === 'guide' ? 'settings' : process.env.GSO_SHOT_MODE);
+mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: shotHash });
   } else if (process.env.GSO_SHOT_TRAIN === '1') {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'mode=train' });
   } else mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
