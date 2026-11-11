@@ -315,13 +315,22 @@ function startApi() {
   apiProc.stdout.on('data', pipe);
   apiProc.stderr.on('data', pipe);
   apiProc.on('exit', (code) => {
+    if (quitting) return;
+    if (apiKilling) {
+      apiKilling = false;
+      log('TTS 服务已主动停止（翻唱前释放显存）');
+      return;
+    }
     log('TTS 服务退出 code=' + code);
-    if (!quitting) setPhase('error', { error: 'TTS 服务已退出（code ' + code + '）' });
+    setPhase('error', { error: 'TTS 服务已退出（code ' + code + '）' });
   });
 }
 
+let apiKilling = false;
+
 function killApi() {
   if (!apiProc || apiProc.exitCode !== null) return;
+  apiKilling = true;
   try { spawn('taskkill', ['/PID', String(apiProc.pid), '/T', '/F'], { windowsHide: true }); } catch (_) {}
 }
 
