@@ -49,7 +49,7 @@ contextBridge.exposeInMainWorld('api', {
   downloadModels: () => ipcRenderer.invoke('download-models'),
   openFolder: () => ipcRenderer.invoke('open-folder'),
   openLogs: () => ipcRenderer.invoke('open-logs'),
-  openHelp: () => ipcRenderer.invoke('open-help'),
+
   logPath: () => ipcRenderer.invoke('log-path'),
   openOutput: () => ipcRenderer.invoke('open-output'),
   openPath: (payload) => ipcRenderer.invoke('open-path', payload),

@@ -19,12 +19,13 @@
 ![批量](docs/ui-batch.png)
 ![音频书](docs/ui-book.png)
 ![翻唱](docs/ui-cover.png)
+![使用指南](docs/ui-guide.png)
 ![训练](docs/ui-train.png)
 ![设置](docs/ui-settings.png)
 
 ## 文档
 
-- [使用指南](docs/USAGE.md)：安装、单句/批量/音频书/翻唱/训练、参数说明、常见问题
+- **内置使用指南**：应用内按 F1，或 设置 → 关于 → 使用指南。按「会卡住的地方」组织，可搜索
 
 ## 安装
 

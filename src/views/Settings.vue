@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 
 defineProps({ voicesCount: { type: Number, default: 0 } });
+const emit = defineEmits(['guide']);
 
 const models = ref([]);
 const outputs = ref([]);
@@ -75,7 +76,7 @@ function setTheme(k) {
 function openOutput() { window.api.openOutput(); }
 function openFolder() { window.api.openFolder(); }
 function openLogs() { window.api.openLogs(); }
-function openHelp() { window.api.openHelp(); }
+function openHelp() { emit('guide'); }
 
 async function checkUpdate() {
   const res = await window.api.updaterCheck();

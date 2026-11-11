@@ -462,13 +462,18 @@ async function runSelfTest() {
 
   if (process.env.GSO_SHOT_MODE || process.env.GSO_SHOT_TRAIN === '1') {
     try {
-      const labelMap = { single: '单句', batch: '批量', book: '音频书', cover: '翻唱', train: '训练', settings: '设置' };
+      const labelMap = { single: '单句', batch: '批量', book: '音频书', cover: '翻唱', train: '训练', settings: '设置', guide: '设置' };
       const want = labelMap[process.env.GSO_SHOT_MODE || 'train'] || '训练';
       await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = (ms) => new Promise(r => setTimeout(r, ms));
         const tab = [...document.querySelectorAll('.seg button')].find(b => b.textContent.trim() === '${want}');
         if (tab) tab.click();
-        await wait(1500);
+        await wait(1200);
+        if ('${process.env.GSO_SHOT_MODE || ''}' === 'guide') {
+          const gb = [...document.querySelectorAll('button')].find(b => (b.textContent || '').trim() === '使用指南');
+          if (gb) gb.click();
+          await wait(700);
+        }
         return 'ok';
       })()`);
       if (process.env.GSO_THEME) {
@@ -834,14 +839,7 @@ ipcMain.handle('voices', () => (payloadReady() ? listVoices() : { pairs: [], sov
 ipcMain.handle('refs', () => seedRefs());
 ipcMain.handle('open-folder', () => shell.openPath(payloadRoot()));
 ipcMain.handle('open-logs', () => shell.openPath(path.join(app.getPath('userData'), 'logs')));
-ipcMain.handle('open-help', () => {
-  const p = app.isPackaged
-    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'docs', 'USAGE.md')
-    : path.join(__dirname, 'docs', 'USAGE.md');
-  if (!fs.existsSync(p)) return { ok: false, error: '找不到使用指南' };
-  shell.openPath(p);
-  return { ok: true, path: p };
-});
+
 ipcMain.handle('open-dir', (_e, { path: p }) => {
   try {
     if (!p || !fs.existsSync(p) || !fs.statSync(p).isDirectory()) return { ok: false, error: '目录不存在' };
@@ -1910,7 +1908,7 @@ function createWindow() {
 
   if (DEV_URL) mainWindow.loadURL(DEV_URL);
   else if (process.env.GSO_SHOT_MODE) {
-    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'mode=' + process.env.GSO_SHOT_MODE });
+    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'mode=' + (process.env.GSO_SHOT_MODE === 'guide' ? 'settings' : process.env.GSO_SHOT_MODE) });
   } else if (process.env.GSO_SHOT_TRAIN === '1') {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'mode=train' });
   } else mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));

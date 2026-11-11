@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import Train from './Train.vue';
 import Settings from './Settings.vue';
+import GuideOverlay from '../components/GuideOverlay.vue';
 import Book from './Book.vue';
 import Cover from './Cover.vue';
 
@@ -25,6 +26,8 @@ const showLog = ref(false);
 
 // ---- 批量 ----
 const hashMode = (String(location.hash || '').match(/mode=(\w+)/) || [])[1];
+const showGuide = ref(false);
+
 const mode = ref(['single', 'batch', 'book', 'cover', 'train', 'settings'].includes(hashMode) ? hashMode : 'single');
 const queue = ref([]);
 const batchRunning = ref(false);
@@ -248,6 +251,9 @@ async function saveSelAsRef() {
 
 onMounted(async () => {
   window.addEventListener('vs-theme', () => { try { draw(); } catch (_) {} });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'F1') { e.preventDefault(); showGuide.value = !showGuide.value; }
+  });
   window.api.on('phase', (p) => {
     if (p.phase === 'ready') {
       const first = !ready.value;
@@ -597,7 +603,7 @@ function replay(item) {
       <Book v-else-if="mode === 'book'" :ready="ready" />
 
       <Cover v-else-if="mode === 'cover'" :ready="ready" />
-      <Settings v-else-if="mode === 'settings'" :voices-count="voices.length" />
+      <Settings v-else-if="mode === 'settings'" :voices-count="voices.length" @guide="showGuide = true" />
 
       <template v-else>
 
@@ -762,6 +768,8 @@ function replay(item) {
       </div>
       </template>
     </main>
+
+    <GuideOverlay :open="showGuide" @close="showGuide = false" />
   </div>
 </template>
 
