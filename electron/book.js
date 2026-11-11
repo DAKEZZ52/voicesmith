@@ -7,7 +7,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 module.exports = function initBook(deps) {
-  const { app, payloadRoot, log, send, synthOne, setVoice } = deps;
+  const { app, payloadRoot, log, send, synthOne, setVoice, synthRobust } = deps;
 
   let cancel = false;
   let running = false;
@@ -209,15 +209,29 @@ module.exports = function initBook(deps) {
         }
         let ok = false;
         let lastErr = '';
-        for (const seed of [666, 2024, 1234, 8888]) {
-          if (cancel) break;
+        if (!cancel) {
           try {
-            const buf = await synthOne(Object.assign({}, params || {}, { text: sent, refPath: ref.path, refText: ref.text, seed }));
-            if (buf.length < 2000) throw new Error('没发声');
-            fs.writeFileSync(file, buf);
-            files.push(file);
-            ok = true;
-            break;
+            const body = Object.assign({}, params || {}, {
+              text: sent,
+              text_lang: 'zh',
+              ref_audio_path: ref.path,
+              prompt_text: ref.text || '',
+              prompt_lang: 'zh',
+              top_k: 15, top_p: 1, temperature: 1,
+              text_split_method: 'cut0', batch_size: 1,
+              speed_factor: (params && params.speed) || 1,
+              seed: -1, media_type: 'wav', repetition_penalty: 1.35,
+              sample_steps: 8, parallel_infer: true, use_flash_attention: false
+            });
+            const robust = await synthRobust(body, sent);
+            const buf = robust.buf;
+            if (buf) {
+              fs.writeFileSync(file, buf);
+              files.push(file);
+              ok = true;
+            } else {
+              lastErr = '反复合成都没声音';
+            }
           } catch (err) {
             lastErr = String(err.message || err);
           }

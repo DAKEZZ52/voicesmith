@@ -1329,19 +1329,10 @@ ipcMain.handle('tts', async (_e, opts) => {
       parallel_infer: true,
       use_flash_attention: false
     };
-    // 1.0 数据量的模型对个别句子会吐静音：自动换 seed 重试 3 次
-    let buf = null;
-    let lastWhy = '';
-    for (const seed of [opts.seed ?? -1, 666, 2024, 1234]) {
-      try {
-        const got = await postTts(Object.assign({}, body, { seed }));
-        if (got.length >= 2000 && wavRms(got) >= 0.003) { buf = got; break; }
-        lastWhy = '这段没发声（模型对个别句子会哑）';
-      } catch (err) {
-        lastWhy = String(err.message || err);
-      }
-    }
-    if (!buf) throw new Error(lastWhy + '：换个说法或再点一次');
+    // 模型对个别句子会吐静音：换 seed → 保守参数 → 按逗号拆句
+    const robust = await synthRobust(body, opts.text);
+    const buf = robust.buf;
+    if (!buf) throw new Error('这段反复合成都没声音，换个说法或再点一次');
     const outDir = path.join(payloadRoot(), 'output');
     fs.mkdirSync(outDir, { recursive: true });
     const file = path.join(outDir, outputName(String(opts.text || '')));
@@ -1593,6 +1584,96 @@ function wavRms(buf) {
   return n ? Math.sqrt(sum / n) : 0;
 }
 
+// 拼接多段 wav（同格式：32k 单声道 16bit）
+function concatWavBuffers(list) {
+  const bufs = list.filter((b) => b && b.length > 44);
+  if (!bufs.length) return null;
+  if (bufs.length === 1) return bufs[0];
+  const head = bufs[0];
+  const rate = head.readUInt32LE(24);
+  const channels = head.readUInt16LE(22);
+  const bits = head.readUInt16LE(34);
+  const body = Buffer.concat(bufs.map((b) => b.subarray(44)));
+  const out = Buffer.alloc(44 + body.length);
+  out.write('RIFF', 0, 'ascii');
+  out.writeUInt32LE(36 + body.length, 4);
+  out.write('WAVE', 8, 'ascii');
+  out.write('fmt ', 12, 'ascii');
+  out.writeUInt32LE(16, 16);
+  out.writeUInt16LE(1, 20);
+  out.writeUInt16LE(channels, 22);
+  out.writeUInt32LE(rate, 24);
+  out.writeUInt32LE(rate * channels * (bits / 8), 28);
+  out.writeUInt16LE(channels * (bits / 8), 32);
+  out.writeUInt16LE(bits, 34);
+  out.write('data', 36, 'ascii');
+  out.writeUInt32LE(body.length, 40);
+  body.copy(out, 44);
+  return out;
+}
+
+function splitClauses(text) {
+  const parts = String(text)
+    .replace(/\s+/g, '')
+    .split(/(?<=[，,、；;：:])/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  // 太短的碎片并到前一段，避免合成出半截语气
+  const merged = [];
+  for (const p of parts) {
+    if (merged.length && merged[merged.length - 1].length < 6) merged[merged.length - 1] += p;
+    else merged.push(p);
+  }
+  return merged;
+}
+
+/**
+ * 稳一点的合成：正常参数 → 保守参数 → 按逗号拆句分别合成再拼
+ * 返回 { buf, attempts, split }
+ */
+async function synthRobust(body, text) {
+  const attempts = [];
+  const ok = (b) => b && b.length >= 2000 && wavRms(b) >= 0.003;
+  for (const seed of [body.seed ?? -1, 666, 2024, 1234]) {
+    try {
+      const got = await postTts(Object.assign({}, body, { seed }));
+      attempts.push(seed);
+      if (ok(got)) return { buf: got, attempts, split: 0 };
+    } catch (_) { attempts.push(seed); }
+  }
+  // 保守参数：步数更高、温度更低、重复惩罚更小
+  const stable = Object.assign({}, body, {
+    top_k: 12, top_p: 0.9, temperature: 0.8,
+    repetition_penalty: 1.2, sample_steps: 16
+  });
+  for (const seed of [777, 4321]) {
+    try {
+      const got = await postTts(Object.assign({}, stable, { seed }));
+      attempts.push(seed);
+      if (ok(got)) return { buf: got, attempts, split: 0 };
+    } catch (_) { attempts.push(seed); }
+  }
+  // 拆句兜底
+  const clauses = splitClauses(text);
+  if (clauses.length > 1) {
+    const parts = [];
+    for (const clause of clauses) {
+      let got = null;
+      for (const seed of [-1, 666, 2024]) {
+        try {
+          const b = await postTts(Object.assign({}, body, { text: clause, seed }));
+          attempts.push(seed);
+          if (ok(b)) { got = b; break; }
+        } catch (_) { attempts.push(seed); }
+      }
+      if (got) parts.push(got);
+    }
+    const merged = concatWavBuffers(parts);
+    if (ok(merged)) return { buf: merged, attempts, split: clauses.length };
+  }
+  return { buf: null, attempts, split: 0 };
+}
+
 async function synthOne(opts) {
   const body = {
     text: opts.text,
@@ -1636,25 +1717,41 @@ ipcMain.handle('batch-run', async (_e, opts) => {
     const t0 = Date.now();
     let ok = false;
     let lastErr = '';
-    // 单句失败时换 seed 重试（这句模型偶尔会吐静音）
-    for (const seed of [666, 2024, 1234, 8888]) {
-      try {
-        const buf = await synthOne(Object.assign({}, opts, { text: item.text, seed }));
-        if (buf.length < 2000 || wavRms(buf) < 0.003) throw new Error('模型没发声（这句换种说法再试）');
-        const label = String(item.text || '')
-          .replace(/[\s\u3000]+/g, '')
-          .replace(/[\\/:*?"<>|\r\n\t，。！？、；：""''（）《》…—]/g, '')
-          .slice(0, 12) || 'audio';
-        const file = path.join(dir, String(idx + 1).padStart(3, '0') + '_' + label + '.wav');
-        fs.writeFileSync(file, buf);
-        const rec = { index: idx, ok: true, path: file, bytes: buf.length, dur: wavDuration(buf), elapsed: ((Date.now() - t0) / 1000).toFixed(1) };
-        results.push(rec);
-        send('batch:item', Object.assign({ status: 'done' }, rec));
-        ok = true;
-        break;
-      } catch (err) {
-        lastErr = String(err.message || err);
-      }
+    // 单句失败：换 seed → 保守参数 → 拆句（与单句合成同一套兜底）
+    const baseBody = {
+      text: item.text,
+      text_lang: 'zh',
+      ref_audio_path: opts.refPath,
+      prompt_text: opts.refText || '',
+      prompt_lang: 'zh',
+      top_k: opts.topK ?? 15,
+      top_p: opts.topP ?? 1,
+      temperature: opts.temperature ?? 1,
+      text_split_method: 'cut0',
+      batch_size: 1,
+      speed_factor: opts.speed ?? 1,
+      seed: -1,
+      media_type: 'wav',
+      repetition_penalty: 1.35,
+      sample_steps: opts.sampleSteps ?? 8,
+      parallel_infer: true,
+      use_flash_attention: false
+    };
+    const robust = await synthRobust(baseBody, item.text);
+    const buf = robust.buf;
+    if (buf) {
+      const label = String(item.text || '')
+        .replace(/[\s\u3000]+/g, '')
+        .replace(/[\\/:*?"<>|\r\n\t，。！？、；：""''（）《》…—]/g, '')
+        .slice(0, 12) || 'audio';
+      const file = path.join(dir, String(idx + 1).padStart(3, '0') + '_' + label + '.wav');
+      fs.writeFileSync(file, buf);
+      const rec = { index: idx, ok: true, path: file, bytes: buf.length, dur: wavDuration(buf), elapsed: ((Date.now() - t0) / 1000).toFixed(1) };
+      results.push(rec);
+      send('batch:item', Object.assign({ status: 'done' }, rec));
+      ok = true;
+    } else {
+      lastErr = '反复合成都没声音（可换个说法）';
     }
     if (!ok) {
       results.push({ index: i, ok: false, error: lastErr });
@@ -2101,7 +2198,7 @@ ipcMain.handle('updater:install', () => {
 // ---------- window ----------
 
 // ---------- 音频书 ----------
-const book = require('./book')({ app, payloadRoot, log, send, synthOne, setVoice });
+const book = require('./book')({ app, payloadRoot, log, send, synthOne, setVoice, synthRobust });
 book.register(ipcMain);
 
 // ---------- 翻唱（RVC） ----------
