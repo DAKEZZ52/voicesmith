@@ -7,7 +7,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$Token,
     [string]$Owner = 'DAKEZZ52',
-    [string]$Repo = 'voicesmith',
+    [string]$Repo = 'weavevoice',
     [string]$ReleaseId = '438369117',
     [int]$MaxPasses = 40
 )
@@ -22,7 +22,7 @@ function Say($msg) {
     Add-Content -Path $log -Value $line -Encoding utf8
 }
 
-$headers = @{ Authorization = "Bearer $Token"; 'User-Agent' = 'voicesmith'; Accept = 'application/vnd.github+json' }
+$headers = @{ Authorization = "Bearer $Token"; 'User-Agent' = 'weavevoice'; Accept = 'application/vnd.github+json' }
 $parts = @('payload.7z.001', 'payload.7z.002', 'payload.7z.003', 'payload.7z.004')
 
 Say "监督开始：目标 Release $ReleaseId，分卷数 $($parts.Count)"

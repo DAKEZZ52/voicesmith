@@ -7,7 +7,7 @@
 ;    —— 所以 payload 一律不删，留给用户；真要清理请在应用里或手动删除安装目录下的 payload。
 
 !macro customRemoveFiles
-  DetailPrint "移除 声匠 VoiceSmith 程序文件（保留 payload 运行环境）…"
+  DetailPrint "移除 织声 WeaveVoice 程序文件（保留 payload 运行环境）…"
 
   RMDir /r "$INSTDIR\resources"
   RMDir /r "$INSTDIR\locales"
@@ -19,7 +19,7 @@
   Delete "$INSTDIR\*.json"
   Delete "$INSTDIR\*.html"
   Delete "$INSTDIR\*.txt"
-  Delete "$INSTDIR\VoiceSmith.exe"
+  Delete "$INSTDIR\WeaveVoice.exe"
 
   ; 目录非空则保留（payload 还在时这里不会删掉整个目录）
   RMDir "$INSTDIR"

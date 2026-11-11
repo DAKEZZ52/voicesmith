@@ -1,4 +1,4 @@
-# 声匠 VoiceSmith
+# 织声 WeaveVoice
 
 本地 AI 语音合成桌面端：**几十秒素材克隆音色，逐句/批量合成，全部跑在自己显卡上。**
 
@@ -28,7 +28,7 @@
 
 ## 安装
 
-1. 从 [Releases](https://github.com/DAKEZZ52/voicesmith/releases/latest) 下载安装包 `VoiceSmith-Setup-<版本>.exe`，以及运行环境分卷 `payload.7z.001` ~ `payload.7z.004`（共 5 个文件，放在同一目录）
+1. 从 [Releases](https://github.com/DAKEZZ52/weavevoice/releases/latest) 下载安装包 `WeaveVoice-Setup-<版本>.exe`，以及运行环境分卷 `payload.7z.001` ~ `payload.7z.004`（共 5 个文件，放在同一目录）
 2. 双击安装（装到用户目录，不需要管理员）
 3. 首次启动会自动按序拼合 4 个分卷、解压运行环境（约 8.6 GB，1 分钟左右）
 4. 首次启动会从 ModelScope 下载约 5.3 GB 预训练模型（只需一次）
@@ -71,7 +71,7 @@ Electron 主进程
 
 | 内容 | 位置 |
 | --- | --- |
-| 参考音频与配置 | `%APPDATA%\voicesmith\` |
+| 参考音频与配置 | `%APPDATA%\weavevoice\` |
 | 合成输出 | `<安装目录>\payload\output\` |
 | 训练数据与权重 | `<安装目录>\payload\logs\`、`SoVITS_weights_v2Pro\`、`GPT_weights_v2Pro\` |
 

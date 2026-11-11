@@ -1678,7 +1678,7 @@ function initUpdater() {
         defaultId: 0,
         cancelId: 1,
         title: '发现新版本',
-        message: '声匠 ' + info.version + ' 已下载完成，重启即可生效。'
+        message: '织声 ' + info.version + ' 已下载完成，重启即可生效。'
       }).then((r) => { if (r.response === 0) autoUpdater.quitAndInstall(); });
     }
   });
@@ -1776,7 +1776,7 @@ function runProc(cmd, args, opts) {
 
 // faiss 的 C 层打不开含中文的路径，索引统一复制到纯 ASCII 的临时目录
 function asciiIndexPath(indexPath) {
-  const dir = path.join(app.getPath('temp'), 'voicesmith-rvc');
+  const dir = path.join(app.getPath('temp'), 'weavevoice-rvc');
   fs.mkdirSync(dir, { recursive: true });
   const dst = path.join(dir, 'index.idx');
   try {
@@ -1900,7 +1900,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280, height: 860, minWidth: 1080, minHeight: 700,
     backgroundColor: '#14171c', show: false, autoHideMenuBar: true,
-    title: '声匠',
+    title: '织声',
     icon: path.join(__dirname, '..', 'build', 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

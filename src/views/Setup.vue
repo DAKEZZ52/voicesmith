@@ -78,8 +78,8 @@ async function run() {
           </svg>
         </div>
         <div>
-          <div class="name">声匠</div>
-          <div class="sub">VoiceSmith · 本地语音合成</div>
+          <div class="name">织声</div>
+          <div class="sub">WeaveVoice · 本地语音合成</div>
         </div>
       </div>
 

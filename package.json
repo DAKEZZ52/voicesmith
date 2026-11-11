@@ -1,7 +1,7 @@
 {
-  "name": "voicesmith",
-  "version": "1.0.16",
-  "description": "声匠 VoiceSmith —— 本地 AI 语音合成与音色微调桌面端",
+  "name": "weavevoice",
+  "version": "2.0.0",
+  "description": "织声 WeaveVoice —— 本地 AI 语音合成与音色微调桌面端",
   "author": {
     "name": "DAKEZZ52",
     "email": "983064062@qq.com"
@@ -26,9 +26,9 @@
     "vite": "^6.4.5"
   },
   "build": {
-    "appId": "com.dakezz.voicesmith",
-    "productName": "声匠",
-    "executableName": "VoiceSmith",
+    "appId": "com.dakezz.weavevoice",
+    "productName": "织声",
+    "executableName": "WeaveVoice",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -49,7 +49,7 @@
       {
         "provider": "github",
         "owner": "DAKEZZ52",
-        "repo": "voicesmith"
+        "repo": "weavevoice"
       }
     ],
     "win": {
@@ -69,8 +69,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "声匠",
-      "artifactName": "VoiceSmith-Setup-${version}.${ext}",
+      "shortcutName": "织声",
+      "artifactName": "WeaveVoice-Setup-${version}.${ext}",
       "deleteAppDataOnUninstall": false,
       "include": "build/installer.nsh"
     },

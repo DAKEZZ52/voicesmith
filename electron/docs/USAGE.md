@@ -1,4 +1,4 @@
-# 声匠 VoiceSmith 使用指南
+# 织声 WeaveVoice 使用指南
 
 > 适用版本 1.0.15 及以上。界面为中文，所有推理在本机显卡完成，不上传云端。
 
@@ -6,8 +6,8 @@
 
 ## 一、安装
 
-1. 从 [Releases](https://github.com/DAKEZZ52/voicesmith/releases/latest) 下载 5 个文件：
-   - `VoiceSmith-Setup-<版本>.exe`
+1. 从 [Releases](https://github.com/DAKEZZ52/weavevoice/releases/latest) 下载 5 个文件：
+   - `WeaveVoice-Setup-<版本>.exe`
    - `payload.7z.001` ~ `payload.7z.004`
 2. 把这 5 个文件放在**同一个文件夹**里，双击安装包。
 3. 安装到用户目录（不需要管理员），建议路径保持默认。
@@ -148,7 +148,7 @@
 | 生成记录 | 所有输出音频，可播放/删除，按 翻唱/试听/唱歌/单句 分类 |
 | 关于 | 版本、音色数、运行环境路径、**外观主题（暖调/冷调/浅色）**、打开日志 |
 
-**出问题时先看日志**：设置 → 关于 → 打开日志，文件在 `%APPDATA%\voicesmith\logs\`。
+**出问题时先看日志**：设置 → 关于 → 打开日志，文件在 `%APPDATA%\weavevoice\logs\`。
 
 ---
 
@@ -178,12 +178,12 @@ A：`payload` 约 17 GB 是运行环境，删了就得重下；`output` 里的�
 
 | 内容 | 位置 |
 |---|---|
-| 程序 | `%LOCALAPPDATA%\Programs\声匠\`（默认） |
+| 程序 | `%LOCALAPPDATA%\Programs\织声\`（默认） |
 | 运行环境 | `<安装目录>\payload\` |
 | 输出音频 | `<安装目录>\payload\output\` |
 | 音色权重 | `payload\SoVITS_weights_v2Pro\`、`payload\GPT_weights_v2Pro\` |
-| 参考音频与配置 | `%APPDATA%\voicesmith\` |
-| 日志 | `%APPDATA%\voicesmith\logs\app-日期.log` |
+| 参考音频与配置 | `%APPDATA%\weavevoice\` |
+| 日志 | `%APPDATA%\weavevoice\logs\app-日期.log` |
 
 ---
 

@@ -516,8 +516,8 @@ function replay(item) {
           </svg>
         </div>
         <div class="brand-text">
-          <div class="brand-name">声匠</div>
-          <div class="brand-sub">VoiceSmith · 语音合成工作台</div>
+          <div class="brand-name">织声</div>
+          <div class="brand-sub">WeaveVoice · 语音合成工作台</div>
         </div>
       </div>
 

@@ -35,7 +35,7 @@ async function attempt(url, file, size, token) {
       signal: controller.signal,
       headers: {
         Authorization: `Bearer ${token}`,
-        'User-Agent': 'voicesmith-release',
+        'User-Agent': 'weavevoice-release',
         Accept: 'application/vnd.github+json',
         'Content-Type': 'application/octet-stream',
         'Content-Length': String(size)

@@ -9,7 +9,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$Token,
     [string]$Owner = 'DAKEZZ52',
-    [string]$Repo = 'voicesmith',
+    [string]$Repo = 'weavevoice',
     [string]$Tag = 'v1.0.0',
     [switch]$SkipPush,
     [switch]$SkipUpload
@@ -19,7 +19,7 @@ $ErrorActionPreference = 'Stop'
 $proj = Split-Path -Parent $PSScriptRoot
 $headers = @{
     Authorization          = "Bearer $Token"
-    'User-Agent'           = 'voicesmith-release'
+    'User-Agent'           = 'weavevoice-release'
     Accept                 = 'application/vnd.github+json'
     'X-GitHub-Api-Version' = '2022-11-28'
 }
@@ -42,7 +42,7 @@ if (-not $exists) {
     Write-Host "      不存在，创建中…"
     $body = @{
         name        = $Repo
-        description = '声匠 VoiceSmith —— 本地 AI 语音合成与音色微调桌面端（Windows）'
+        description = '织声 WeaveVoice —— 本地 AI 语音合成与音色微调桌面端（Windows）'
         private     = $false
         has_issues  = $true
         has_wiki    = $false
@@ -77,8 +77,8 @@ try {
     $body = @{
         tag_name         = $Tag
         target_commitish = 'main'
-        name             = "声匠 VoiceSmith $Tag"
-        body             = "## 声匠 VoiceSmith $Tag`n`n本地 AI 语音合成与音色微调桌面端。`n`n### 安装`n`n1. 下载 ``VoiceSmith-Setup-$($Tag.TrimStart('v')).exe`` 与 ``payload.7z.001``、``payload.7z.002``，三个文件放同一目录`n2. 双击安装，首次启动自动拼合解压运行环境（约 8.6 GB）`n3. 首次启动会下载约 5.3 GB 预训练模型（ModelScope 国内源）`n`n### 系统要求`n`nWindows 10/11 x64 · NVIDIA 显卡（CUDA 12 驱动）· ≥6 GB 显存 · 约 15 GB 磁盘`n`n语音引擎基于 [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)（MIT）。"
+        name             = "织声 WeaveVoice $Tag"
+        body             = "## 织声 WeaveVoice $Tag`n`n本地 AI 语音合成与音色微调桌面端。`n`n### 安装`n`n1. 下载 ``WeaveVoice-Setup-$($Tag.TrimStart('v')).exe`` 与 ``payload.7z.001``、``payload.7z.002``，三个文件放同一目录`n2. 双击安装，首次启动自动拼合解压运行环境（约 8.6 GB）`n3. 首次启动会下载约 5.3 GB 预训练模型（ModelScope 国内源）`n`n### 系统要求`n`nWindows 10/11 x64 · NVIDIA 显卡（CUDA 12 驱动）· ≥6 GB 显存 · 约 15 GB 磁盘`n`n语音引擎基于 [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)（MIT）。"
         draft            = $false
         prerelease       = $false
     }
@@ -89,7 +89,7 @@ try {
 if (-not $SkipUpload) {
     Write-Host "[4/4] 上传资产（可能耗时较久）…"
     $assets = @(
-        "release\VoiceSmith-Setup-1.0.0.exe",
+        "release\WeaveVoice-Setup-1.0.0.exe",
         "release\latest.yml",
         "release\payload.7z.001",
         "release\payload.7z.002"

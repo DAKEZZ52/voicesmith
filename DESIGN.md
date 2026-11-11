@@ -1,4 +1,4 @@
-# 声匠 VoiceSmith — 视觉系统
+# 织声 WeaveVoice — 视觉系统
 
 模式：**Operate**（任务型工具界面，克制、精确、密度高）。
 
