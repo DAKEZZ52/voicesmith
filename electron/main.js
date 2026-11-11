@@ -760,13 +760,18 @@ async function runSelfTest() {
 
   if (process.env.GSO_SHOT_MODE || process.env.GSO_SHOT_TRAIN === '1') {
     try {
-      const labelMap = { single: '单句', batch: '批量', book: '音频书', cover: '翻唱', train: '训练', settings: '设置', guide: '设置' };
+      const labelMap = { single: '单句', batch: '批量', book: '音频书', profile: '测声', cover: '翻唱', train: '训练', settings: '设置', guide: '设置' };
       const want = labelMap[process.env.GSO_SHOT_MODE || 'train'] || '训练';
       await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = (ms) => new Promise(r => setTimeout(r, ms));
         const tab = [...document.querySelectorAll('.seg button')].find(b => b.textContent.trim() === '${want}');
         if (tab) tab.click();
         await wait(1200);
+        if ('${process.env.GSO_SHOT_MODE || ''}' === 'profile') {
+          const go = [...document.querySelectorAll('button')].find(b => (b.textContent || '').includes('开始分析'));
+          if (go && !go.disabled) go.click();
+          for (let i = 0; i < 90; i++) { await wait(1000); if (document.querySelector('.range')) break; }
+        }
         if ('${process.env.GSO_SHOT_MODE || ''}' === 'guide') {
           const gb = [...document.querySelectorAll('button')].find(b => (b.textContent || '').trim() === '使用指南');
           if (gb) gb.click();
@@ -2176,6 +2181,59 @@ ipcMain.handle('rvc:cancel', () => {
   return { ok: true };
 });
 
+// ---------- 测声：音域与音色分析 ----------
+ipcMain.handle('profile:analyze', async (_e, opts) => {
+  const input = String((opts && opts.path) || '');
+  if (!input || !fs.existsSync(input)) return { ok: false, error: '文件不存在' };
+  const payload = payloadRoot();
+  const py = pythonRuntime(payload);
+  const ff = path.join(payload, 'runtime', 'ffmpeg.exe');
+  const scriptPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'py', 'voice_profile.py')
+    : path.join(__dirname, 'py', 'voice_profile.py');
+  const env = Object.assign({}, process.env, { PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' });
+  if (py.useBase) env.PYTHONPATH = py.site;
+  let work = '';
+  let target = input;
+  try {
+    if (opts && opts.separate) {
+      work = path.join(app.getPath('temp'), 'gso-profile-' + Date.now());
+      fs.mkdirSync(work, { recursive: true });
+      const sepScript = app.isPackaged
+        ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'py', 'uvr_separate.py')
+        : path.join(__dirname, 'py', 'uvr_separate.py');
+      const r = await runProc(py.exe, ['-u', sepScript, '--input', input, '--outdir', work,
+        '--payload', payload, '--ffmpeg', ff, '--model', 'HP2_all_vocals', '--device', 'cpu'], { env });
+      let done = null;
+      for (const line of r.out.split(/\r?\n/)) {
+        if (!line.trim().startsWith('{')) continue;
+        try {
+          const o = JSON.parse(line);
+          if (o.type === 'done') done = o;
+        } catch (_) {}
+      }
+      if (!done) return { ok: false, error: '人声分离失败：' + String(r.err || '').slice(-200) };
+      target = done.vocal;
+    }
+    const r = await runProc(py.exe, ['-u', scriptPath, target], { env });
+    let profile = null;
+    for (const line of r.out.split(/\r?\n/)) {
+      const s = line.trim();
+      if (!s.startsWith('{')) continue;
+      try {
+        const o = JSON.parse(s);
+        if (o && typeof o.ok === 'boolean') profile = o;
+      } catch (_) {}
+    }
+    if (!profile) return { ok: false, error: '分析失败：' + String(r.err || r.out || '').slice(-200) };
+    if (!profile.ok) return { ok: false, error: profile.error || '分析失败' };
+    return { ok: true, profile };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  } finally {
+    if (work) { try { fs.rmSync(work, { recursive: true, force: true }); } catch (_) {} }
+  }
+});
 ipcMain.handle('rvc:convert', async (_e, opts) => {
   if (rvcProc) return { ok: false, error: '正在处理中，请先停止' };
   const root = rvcRoot();
@@ -2311,7 +2369,7 @@ function createWindow() {
 
   if (DEV_URL) mainWindow.loadURL(DEV_URL);
   else if (process.env.GSO_SHOT_MODE) {
-    const shotHash = 'mode=' + (process.env.GSO_SHOT_MODE === 'guide' ? 'settings' : process.env.GSO_SHOT_MODE);
+    const shotHash = 'mode=' + (process.env.GSO_SHOT_MODE === 'guide' ? 'settings' : process.env.GSO_SHOT_MODE) + (process.env.GSO_PROFILE_CLIP ? '&clip=' + encodeURIComponent(process.env.GSO_PROFILE_CLIP) : '');
 mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: shotHash });
   } else if (process.env.GSO_SHOT_TRAIN === '1') {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'mode=train' });

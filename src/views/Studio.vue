@@ -5,6 +5,7 @@ import Settings from './Settings.vue';
 import GuideOverlay from '../components/GuideOverlay.vue';
 import Book from './Book.vue';
 import Cover from './Cover.vue';
+import Profile from './Profile.vue';
 
 const props = defineProps({ phase: { type: String, default: 'starting' } });
 
@@ -33,7 +34,7 @@ async function openOutput() {
   if (r && r.ok === false) error.value = '打开输出目录失败：' + (r.error || '未知错误');
 }
 
-const mode = ref(['single', 'batch', 'book', 'cover', 'train', 'settings'].includes(hashMode) ? hashMode : 'single');
+const mode = ref(['single', 'batch', 'book', 'profile', 'cover', 'train', 'settings'].includes(hashMode) ? hashMode : 'single');
 const queue = ref([]);
 const batchRunning = ref(false);
 const batchDir = ref('');
@@ -596,6 +597,7 @@ function replay(item) {
           <button :class="{ on: mode === 'batch' }" @click="mode = 'batch'">批量</button>
           <button :class="{ on: mode === 'book' }" @click="mode = 'book'">音频书</button>
           
+          <button :class="{ on: mode === 'profile' }" @click="mode = 'profile'">测声</button>
           <button :class="{ on: mode === 'cover' }" @click="mode = 'cover'">翻唱</button>
           <button :class="{ on: mode === 'train' }" @click="mode = 'train'">训练</button>
           <button :class="{ on: mode === 'settings' }" @click="mode = 'settings'">设置</button>
@@ -607,6 +609,7 @@ function replay(item) {
       <Train v-if="mode === 'train'" @refresh="reloadVoices" />
       <Book v-else-if="mode === 'book'" :ready="ready" />
 
+      <Profile v-else-if="mode === 'profile'" />
       <Cover v-else-if="mode === 'cover'" :ready="ready" />
       <Settings v-else-if="mode === 'settings'" :voices-count="voices.length" @guide="showGuide = true" />
 
