@@ -476,6 +476,7 @@ async function runSelfTest() {
         }
         return 'ok';
       })()`);
+
       if (process.env.GSO_THEME) {
         const th = String(process.env.GSO_THEME).replace(/[^a-z]/g, '');
         await mainWindow.webContents.executeJavaScript(
@@ -1127,6 +1128,14 @@ ipcMain.handle('refs:tidy', () => {
 ipcMain.handle('models:list', () => {
   const root = payloadRoot();
   const out = [];
+  // 每个音色当前在用的那一对（listVoices 取最新 mtime）
+  const activeSet = new Set();
+  try {
+    for (const pair of listVoices().pairs) {
+      if (pair.sovits) activeSet.add(pair.sovits.split('/').pop());
+      if (pair.gpt) activeSet.add(pair.gpt.split('/').pop());
+    }
+  } catch (_) {}
   for (const dirName of fs.existsSync(root) ? fs.readdirSync(root) : []) {
     if (!/^(SoVITS|GPT)_weights/.test(dirName)) continue;
     const dir = path.join(root, dirName);
@@ -1142,6 +1151,8 @@ ipcMain.handle('models:list', () => {
         file: f,
         path: full,
         kind: dirName.startsWith('SoVITS') ? 'sovits' : 'gpt',
+        voice: (f.split(/[-_]/)[0] || f).toLowerCase(),
+        active: activeSet.has(f),
         sizeMB: +(s.size / 1048576).toFixed(1),
         mtime: s.mtime.toISOString()
       });

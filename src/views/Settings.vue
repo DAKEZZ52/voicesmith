@@ -13,7 +13,29 @@ const payloadPath = ref('');
 const version = ref('');
 const audioEl = ref(null);
 
+const showAll = ref(false);
 const totalModelMB = computed(() => models.value.reduce((s, m) => s + m.sizeMB, 0));
+
+// 按音色分组：在用的那一对 vs 历史检查点
+const modelGroups = computed(() => {
+  const map = new Map();
+  for (const m of models.value) {
+    const key = m.voice || 'other';
+    if (!map.has(key)) map.set(key, { voice: key, active: [], history: [] });
+    (m.active ? map.get(key).active : map.get(key).history).push(m);
+  }
+  return [...map.values()].sort((a, b) => a.voice.localeCompare(b.voice));
+});
+const activeCount = computed(() => modelGroups.value.reduce((s, g) => s + g.active.length, 0));
+const historyCount = computed(() => modelGroups.value.reduce((s, g) => s + g.history.length, 0));
+
+async function cleanHistory() {
+  const targets = modelGroups.value.flatMap((g) => g.history);
+  if (!targets.length) return;
+  if (!window.confirm('删除 ' + targets.length + ' 个历史检查点？\\n当前音色在用的 ' + activeCount.value + ' 个会保留。')) return;
+  for (const t of targets) await window.api.deleteModel({ path: t.path });
+  await refresh();
+}
 const totalOutputMB = computed(() => outputs.value.reduce((s, o) => s + o.sizeMB, 0));
 
 onMounted(async () => {
@@ -89,18 +111,51 @@ async function checkUpdate() {
   <div class="settings">
     <section class="card">
       <div class="editor-head">
-        <span>训练好的模型 <em class="muted">{{ models.length }} 个 · {{ totalModelMB.toFixed(0) }} MB</em></span>
+        <span>
+          音色与权重
+          <em class="muted">{{ modelGroups.length }} 个音色 · 在用 {{ activeCount }} 个文件 · 共 {{ totalModelMB.toFixed(0) }} MB</em>
+        </span>
         <button class="mini" @click="refresh" :disabled="busy === 'refresh'">刷新</button>
       </div>
       <div class="list">
-        <div v-for="m in models" :key="m.path" class="row">
-          <span class="badge" :class="m.kind">{{ m.kind === 'sovits' ? 'SoVITS' : 'GPT' }}</span>
-          <span class="name mono" :title="m.path">{{ m.file }}</span>
-          <span class="meta">{{ m.sizeMB }} MB</span>
-          <span class="meta">{{ fmtDate(m.mtime) }}</span>
-          <button class="mini danger" @click="removeModel(m)">删除</button>
+        <div v-for="g in modelGroups" :key="g.voice" class="voice-group">
+          <div class="group-head">
+            <b>{{ g.voice }}</b>
+            <span class="tag">使用中</span>
+            <span class="muted" v-if="g.active.length === 2">SoVITS + GPT 成对</span>
+            <span class="muted" v-else>缺少配对文件，可能无法合成</span>
+          </div>
+          <div v-for="m in g.active" :key="m.path" class="row">
+            <span class="badge" :class="m.kind">{{ m.kind === 'sovits' ? 'SoVITS' : 'GPT' }}</span>
+            <span class="name mono" :title="m.path">{{ m.file }}</span>
+            <span class="meta">{{ m.sizeMB }} MB</span>
+            <span class="meta">{{ fmtDate(m.mtime) }}</span>
+          </div>
         </div>
-        <div v-if="!models.length" class="empty">还没有训练好的模型，去「训练」页跑一次</div>
+        <div v-if="!models.length" class="empty">
+          <b>还没有训练好的模型</b>
+          去「训练」页跑一次，完成后这里会出现音色
+        </div>
+
+        <div v-if="historyCount" class="hist-actions">
+          <button class="mini" @click="showAll = !showAll">
+            {{ showAll ? '收起历史检查点' : '显示 ' + historyCount + ' 个历史检查点' }}
+          </button>
+          <button v-if="showAll" class="mini danger" @click="cleanHistory">清理全部历史检查点</button>
+        </div>
+
+        <template v-if="showAll">
+          <div v-for="g in modelGroups" :key="'h' + g.voice" class="voice-group">
+            <div class="group-head hist"><b>{{ g.voice }}</b><span class="muted">历史检查点 · 可删</span></div>
+            <div v-for="m in g.history" :key="m.path" class="row hist">
+              <span class="badge" :class="m.kind">{{ m.kind === 'sovits' ? 'SoVITS' : 'GPT' }}</span>
+              <span class="name mono" :title="m.path">{{ m.file }}</span>
+              <span class="meta">{{ m.sizeMB }} MB</span>
+              <span class="meta">{{ fmtDate(m.mtime) }}</span>
+              <button class="mini danger" @click="removeModel(m)">删除</button>
+            </div>
+          </div>
+        </template>
       </div>
     </section>
 
@@ -178,4 +233,22 @@ async function checkUpdate() {
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .actions { display: flex; gap: 8px; margin-top: 12px; }
 .alert { margin-top: 10px; border: 1px solid rgba(228, 103, 95, .32); background: rgba(228, 103, 95, .07); color: #e6a3a0; border-radius: 8px; padding: 8px 10px; font-size: 12px; }
+
+.voice-group { border-top: 1px solid var(--line-soft); padding-top: 8px; margin-top: 4px; }
+.voice-group:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+.group-head { display: flex; align-items: baseline; gap: 8px; padding: 2px 6px 4px; }
+.group-head b { font-size: 12.5px; font-weight: 650; }
+.group-head .tag {
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--accent);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+}
+.group-head .muted { font-size: 10.5px; color: var(--muted-2); }
+.group-head.hist b { color: var(--muted); }
+.row.hist { opacity: .7; }
+.hist-actions { display: flex; gap: 6px; padding: 10px 6px 2px; }
 </style>
