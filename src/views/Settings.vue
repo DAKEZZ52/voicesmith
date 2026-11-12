@@ -14,6 +14,7 @@ const version = ref('');
 const audioEl = ref(null);
 
 const showAll = ref(false);
+const roleMap = ref({});
 const totalModelMB = computed(() => models.value.reduce((s, m) => s + m.sizeMB, 0));
 
 // 按音色分组：在用的那一对 vs 历史检查点
@@ -21,7 +22,7 @@ const modelGroups = computed(() => {
   const map = new Map();
   for (const m of models.value) {
     const key = m.voice || 'other';
-    if (!map.has(key)) map.set(key, { voice: key, role: m.role, active: [], history: [] });
+    if (!map.has(key)) map.set(key, { voice: key, role: m.role || roleMap.value[key] || 'read', active: [], history: [] });
     (m.active ? map.get(key).active : map.get(key).history).push(m);
   }
   return [...map.values()].sort((a, b) => a.voice.localeCompare(b.voice));
@@ -51,6 +52,12 @@ onMounted(async () => {
 });
 
 async function refresh() {
+  try {
+    const v = await window.api.voices();
+    const m = {};
+    for (const p of (v.pairs || [])) m[p.name] = p.role;
+    roleMap.value = m;
+  } catch (_) {}
   busy.value = 'refresh';
   try {
     models.value = await window.api.listModels();
@@ -93,8 +100,8 @@ async function removeModel(item) {
   await refresh();
 }
 
-const themes = [{ key: 'warm', label: '暖调' }, { key: 'cool', label: '冷调' }, { key: 'light', label: '浅色' }];
-const current = ref((typeof localStorage !== 'undefined' && localStorage.getItem('vs-theme')) || 'warm');
+const themes = [{ key: 'light', label: '浅色' }, { key: 'graphite', label: '深色' }];
+const current = ref((typeof localStorage !== 'undefined' && localStorage.getItem('vs-theme')) || 'light');
 function setTheme(k) {
   current.value = k;
   window.dispatchEvent(new CustomEvent('vs-theme', { detail: k }));
@@ -127,7 +134,7 @@ async function checkUpdate() {
           <div class="group-head">
             <b>{{ g.voice }}</b>
             <span class="tag">使用中</span>
-            <select class="role-select" :value="g.role" @change="setRole(g.voice, $event.target.value)">
+            <select class="role-select" :value="g.role || 'read'" @change="setRole(g.voice, $event.target.value)">
               <option value="read">朗读用</option>
               <option value="sing">唱歌用</option>
             </select>
@@ -257,7 +264,7 @@ async function checkUpdate() {
   background: var(--accent-soft);
 }
 .group-head .muted { font-size: 10.5px; color: var(--muted-2); }
-.role-select { height: 22px; font-size: 10.5px; padding: 0 4px; border-radius: 6px; }
+.role-select { min-width: 98px; height: 26px; font-size: 11.5px; padding: 0 8px; border-radius: 7px; }
 .group-head.hist b { color: var(--muted); }
 .row.hist { opacity: .7; }
 .hist-actions { display: flex; gap: 6px; padding: 10px 6px 2px; }

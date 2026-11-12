@@ -5,10 +5,10 @@ import Studio from './views/Studio.vue';
 
 const phase = ref('checking');
 const error = ref('');
-const theme = ref('warm');
+const theme = ref('light');
 
 function applyTheme(name) {
-  const t = ['warm', 'cool', 'light'].includes(name) ? name : 'warm';
+  const t = ['light', 'graphite'].includes(name) ? name : 'light';
   theme.value = t;
   document.documentElement.dataset.theme = t;
   try { localStorage.setItem('vs-theme', t); } catch (_) {}
@@ -17,7 +17,7 @@ function applyTheme(name) {
 onMounted(async () => {
   // 截图/测试时可通过 ?theme= 强制指定
   const forced = new URLSearchParams(location.search).get('theme');
-  const saved = forced || localStorage.getItem('vs-theme') || 'warm';
+  const saved = forced || localStorage.getItem('vs-theme') || 'light';
   applyTheme(saved);
   window.addEventListener('vs-theme', (e) => applyTheme(e.detail));
 

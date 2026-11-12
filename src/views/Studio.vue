@@ -27,6 +27,42 @@ const showLog = ref(false);
 
 // ---- 批量 ----
 const hashMode = (String(location.hash || '').match(/mode=(\w+)/) || [])[1];
+const ICON = {
+  single: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" stroke-linejoin="round"/></svg>',
+  batch: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 4.5h10M3 8h10M3 11.5h6" stroke-linecap="round"/></svg>',
+  book: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 3.2h4.2c.6 0 1 .4 1 1v8.6c0-.6-.5-1-1-1H3zM13 3.2H8.8c-.6 0-1 .4-1 1v8.6c0-.6.5-1 1-1H13z" stroke-linejoin="round"/></svg>',
+  profile: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 8h1.6l1.2-3.4L6.6 12l1.6-8 1.4 6.6L11 6.4l1 1.6H14" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  cover: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="6" y="2.4" width="4" height="7" rx="2"/><path d="M3.6 7.6a4.4 4.4 0 0 0 8.8 0M8 12v2" stroke-linecap="round"/></svg>',
+  train: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2.4l1.6 3.4 3.6.5-2.6 2.6.6 3.7L8 10.9l-3.2 1.7.6-3.7L2.8 6.3l3.6-.5z" stroke-linejoin="round"/></svg>',
+  settings: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M8 2.2v1.6M8 12.2v1.6M2.2 8h1.6M12.2 8h1.6M3.9 3.9l1.1 1.1M11 11l1.1 1.1M12.1 3.9L11 5M5 11l-1.1 1.1" stroke-linecap="round"/></svg>'
+};
+
+const MODES = [
+  { id: 'single', label: '单句合成', icon: ICON.single },
+  { id: 'batch', label: '批量合成', icon: ICON.batch },
+  { id: 'book', label: '音频书', icon: ICON.book },
+  { id: 'profile', label: '测声', icon: ICON.profile },
+  { id: 'cover', label: '翻唱', icon: ICON.cover },
+  { id: 'train', label: '训练', icon: ICON.train },
+  { id: 'settings', label: '设置', icon: ICON.settings }
+];
+
+const PAGE = {
+  single: ['单句合成', '输入一段话，用当前音色读出来'],
+  batch: ['批量合成', '一次排好几十句，逐句合成后打包'],
+  book: ['音频书', '长文分章，逐句合成并导出带字幕的音轨'],
+  profile: ['测声', '测出你的音域，看哪些歌适合你'],
+  cover: ['翻唱', '把人声换成你的音色，再和伴奏合起来'],
+  train: ['训练', '用你的录音训练一个新音色'],
+  settings: ['设置', '音色、权重、主题与使用指南']
+};
+
+const sideInfo = computed(() => ['single', 'batch', 'book'].includes(mode.value));
+const refInfo = computed(() => mode.value === 'single' || mode.value === 'batch');
+const bodyEl = ref(null);
+
+const pageTitle = computed(() => (PAGE[mode.value] || ['织声', ''])[0]);
+const pageSubtitle = computed(() => (PAGE[mode.value] || ['', ''])[1]);
 const showGuide = ref(false);
 const coverPitch = ref(null);
 
@@ -537,51 +573,59 @@ function replay(item) {
     <aside class="sidebar">
       <div class="brand">
         <div class="logo">
-          <svg width="24" height="24" viewBox="0 0 34 34" fill="none">
-            <rect x="6" y="12" width="3.2" height="10" rx="1.6" fill="#ff8a3d"/>
-            <rect x="12.2" y="8" width="3.2" height="18" rx="1.6" fill="#ff8a3d"/>
-            <rect x="18.4" y="5" width="3.2" height="24" rx="1.6" fill="#ffb26b"/>
-            <rect x="24.6" y="9.5" width="3.2" height="15" rx="1.6" fill="#ff8a3d"/>
+          <svg width="26" height="26" viewBox="0 0 34 34" fill="none">
+            <rect x="6" y="12" width="3.4" height="10" rx="1.7" fill="currentColor" opacity=".55"/>
+            <rect x="12.2" y="8" width="3.4" height="18" rx="1.7" fill="currentColor" opacity=".8"/>
+            <rect x="18.4" y="5" width="3.4" height="24" rx="1.7" fill="currentColor"/>
+            <rect x="24.6" y="9.5" width="3.4" height="15" rx="1.7" fill="currentColor" opacity=".7"/>
           </svg>
         </div>
         <div class="brand-text">
           <div class="brand-name">织声</div>
-          <div class="brand-sub">WeaveVoice · 语音合成工作台</div>
+          <div class="brand-sub">WeaveVoice</div>
         </div>
       </div>
 
-      <div class="section">
-        <div class="section-head">音色</div>
-        <div class="voice-list">
+      <nav class="nav">
+        <button
+          v-for="m in MODES" :key="m.id"
+          class="nav-item" :class="{ on: mode === m.id }"
+          @click="mode = m.id"
+        >
+          <span class="nav-icon" v-html="m.icon"></span>
+          <span class="nav-label">{{ m.label }}</span>
+          <span class="nav-badge" v-if="m.id === 'single' && running">●</span>
+        </button>
+      </nav>
+
+      <div class="side-group" v-if="sideInfo">
+        <div class="side-head">音色</div>
+        <div class="side-list">
           <button
             v-for="v in voices" :key="v.sovits"
-            class="voice" :class="{ active: currentVoice && currentVoice.sovits === v.sovits }"
+            class="voice-row" :class="{ on: currentVoice && currentVoice.sovits === v.sovits }"
             @click="pickVoice(v)"
           >
             <span class="voice-dot"></span>
             <span class="voice-name">{{ v.name }}</span>
-            <span class="voice-role" :class="v.role">{{ v.role === 'sing' ? '唱歌' : '朗读' }}</span>
-            <span class="voice-tag">{{ v.gpt ? '已训练' : '仅 SoVITS' }}</span>
+            <span class="voice-role" :class="v.role">{{ v.role === 'sing' ? '唱' : '读' }}</span>
           </button>
           <div v-if="!voices.length" class="empty">没有找到模型权重</div>
         </div>
       </div>
 
-      <div class="section grow">
-        <div class="section-head">
+      <div class="side-group grow" v-if="refInfo">
+        <div class="side-head">
           参考音频
           <span class="head-actions">
             <button class="mini" @click="tidyRefs" :disabled="!refs.length">整理</button>
             <button class="mini" @click="importRef">导入</button>
           </span>
         </div>
-        <div class="ref-list">
-          <div
-            v-for="r in refs" :key="r.path"
-            class="ref-row"
-          >
+        <div class="side-list scroll">
+          <div v-for="r in refs" :key="r.path" class="ref-item">
             <button
-              class="ref" :class="{ active: currentRef && currentRef.path === r.path }"
+              class="ref-row" :class="{ on: currentRef && currentRef.path === r.path }"
               @click="selectRef(r)" :title="r.text || '缺参考文本'"
             >
               <span class="ref-name">{{ r.name }}</span>
@@ -589,210 +633,195 @@ function replay(item) {
             </button>
             <button class="ref-del" title="删除" @click.stop="deleteRef(r)">×</button>
           </div>
-          <div v-if="!refs.length" class="empty">还没有参考音频，点右上角「导入」</div>
+          <div v-if="!refs.length" class="empty">还没有参考音频</div>
         </div>
       </div>
 
-      <div class="sidebar-foot">
-        <button class="ghost" @click="openOutput">输出目录</button>
-        <button class="ghost" @click="checkUpdate">{{ updateLabel }}</button>
+      <div class="side-foot">
+        <div class="status" :class="{ ok: ready }">
+          <span class="dot"></span>{{ ready ? '服务就绪' : '启动中…' }}
+        </div>
+        <div class="foot-row">
+          <button class="ghost mini" @click="openOutput">输出目录</button>
+          <button class="ghost mini" @click="checkUpdate">{{ updateLabel }}</button>
+        </div>
       </div>
       <pre v-if="showLog" class="log mono">{{ log.join('\n') }}</pre>
     </aside>
 
     <main class="main">
-      <header class="topbar">
-        <div class="status" :class="{ ok: ready }">
-          <span class="dot"></span>
-          {{ ready ? '服务就绪' : '服务启动中…' }}
+      <header class="page-head">
+        <div class="page-title">
+          <h1>{{ pageTitle }}</h1>
+          <p>{{ pageSubtitle }}</p>
         </div>
-        <div class="current">
-          <span class="muted">当前音色</span>
-          <b>{{ currentVoice ? currentVoice.name : '—' }}</b>
+        <div class="page-meta">
+          <span class="pill" v-if="currentVoice">
+            {{ currentVoice.name }} · {{ currentVoice.role === 'sing' ? '唱歌' : '朗读' }}
+          </span>
+          <span class="pill" v-if="mode === 'single' && running">合成中 {{ elapsed }}s</span>
         </div>
-        <div class="seg">
-          <button :class="{ on: mode === 'single' }" @click="mode = 'single'">单句</button>
-          <button :class="{ on: mode === 'batch' }" @click="mode = 'batch'">批量</button>
-          <button :class="{ on: mode === 'book' }" @click="mode = 'book'">音频书</button>
-          
-          <button :class="{ on: mode === 'profile' }" @click="mode = 'profile'">测声</button>
-          <button :class="{ on: mode === 'cover' }" @click="mode = 'cover'">翻唱</button>
-          <button :class="{ on: mode === 'train' }" @click="mode = 'train'">训练</button>
-          <button :class="{ on: mode === 'settings' }" @click="mode = 'settings'">设置</button>
-        </div>
-        <div class="spacer"></div>
-        <div class="muted mono" v-if="running">合成中 {{ elapsed }}s</div>
       </header>
 
-      <Train v-if="mode === 'train'" @refresh="reloadVoices" />
-      <Book v-else-if="mode === 'book'" :ready="ready" />
+      <div class="page-body" ref="bodyEl">
+        <Train v-if="mode === 'train'" @refresh="reloadVoices" />
+        <Book v-else-if="mode === 'book'" :ready="ready" />
+        <Profile v-else-if="mode === 'profile'" />
+        <Cover v-else-if="mode === 'cover'" :ready="ready" :pitch-hint="coverPitch" />
+        <Settings v-else-if="mode === 'settings'" :voices-count="voices.length" @guide="showGuide = true" />
 
-      <Profile v-else-if="mode === 'profile'" />
-      <Cover v-else-if="mode === 'cover'" :ready="ready" :pitch-hint="coverPitch" />
-      <Settings v-else-if="mode === 'settings'" :voices-count="voices.length" @guide="showGuide = true" />
+        <div v-else class="synth">
+          <div class="synth-main">
+            <section class="card editor">
+              <div class="editor-head">
+                <span>合成文本</span>
+                <div class="editor-actions">
+                  <span class="count mono">{{ charCount }} 字</span>
+                  <button class="mini" @click="useSample">示例</button>
+                  <button class="mini" @click="text = ''">清空</button>
+                </div>
+              </div>
+              <textarea
+                v-model="text"
+                class="text"
+                placeholder="输入要合成的文字…（建议一次一句，30 字以内最稳）"
+                spellcheck="false"
+                @keydown.ctrl.enter.prevent="synthesize"
+              ></textarea>
+            </section>
 
-      <template v-else>
+            <section class="card">
+              <div class="editor-head">
+                <span>参考音频文本 <em>（必须与音频逐字对应）</em></span>
+                <span class="muted mono">{{ currentRef ? currentRef.name : '未选择' }}</span>
+              </div>
+              <input
+                v-if="currentRef"
+                v-model="refText"
+                type="text"
+                class="mono wide"
+                placeholder="这段参考音频里说的原话，例如：嗟乎，师道之不传也久矣"
+                @blur="saveRefText"
+              />
+            </section>
 
-      <div class="workspace" :class="mode">
+            <section v-if="currentRef" class="card">
+              <div class="editor-head">
+                <span>参考音频裁剪 <em>（拖动波形取 3~10 秒）</em></span>
+                <span class="muted mono">
+                  {{ selDur.toFixed(2) }}s / {{ waveDur ? waveDur.toFixed(1) + 's' : '—' }}
+                  <em :class="selValid ? 'ok' : 'warn'">{{ selValid ? '合规' : '需 3~10 秒' }}</em>
+                </span>
+              </div>
+              <canvas ref="cvEl" class="wave-cv" @mousedown.prevent="onWaveDown"></canvas>
+              <div class="wave-actions">
+                <button class="mini" :disabled="trimming || !selValid" @click="previewSel">试听选区</button>
+                <button class="mini" :disabled="trimming || !selValid" @click="saveSelAsRef">存为新参考</button>
+                <button class="mini" :disabled="!waveDur" @click="resetSel">重置</button>
+                <span class="muted" v-if="trimming">处理中…</span>
+              </div>
+              <audio v-if="previewUrl" :src="previewUrl" controls autoplay class="preview-audio"></audio>
+            </section>
 
-      <section class="editor card">
-        <div class="editor-head">
-          <span>合成文本</span>
-          <div class="editor-actions">
-            <button class="mini" @click="useSample">示例</button>
-            <button class="mini" @click="text = ''">清空</button>
-            <span class="count mono">{{ charCount }} 字</span>
+            <section v-if="mode === 'batch'" class="card">
+              <div class="editor-head">
+                <span>批量队列 <em>（{{ queue.length }} 句）</em></span>
+                <span class="muted mono" v-if="batchRunning">{{ batchDoneCount }} / {{ batchTotal }}</span>
+              </div>
+              <div class="q-list">
+                <div v-for="(q, i) in queue" :key="i" class="q-row" :class="q.status" :title="q.error || ''">
+                  <span class="q-index mono">{{ String(i + 1).padStart(2, '0') }}</span>
+                  <span class="q-text">{{ q.text }}</span>
+                  <span class="q-dur mono" v-if="q.dur">{{ q.dur.toFixed(1) }}s</span>
+                  <span class="q-state" :class="q.status">{{ statusLabel(q.status) }}</span>
+                  <button v-if="q.path" class="mini" @click="playItem(q)">试听</button>
+                </div>
+                <div v-if="!queue.length" class="empty">点右侧「重建队列」，按句号/问号自动拆句</div>
+              </div>
+            </section>
+
+            <section v-if="mode === 'single' && result" class="card">
+              <div class="editor-head">
+                <span>合成结果</span>
+                <span class="muted mono">{{ result.elapsed }}s · {{ (result.bytes / 1024).toFixed(0) }} KB</span>
+              </div>
+              <audio :src="result.url" controls autoplay></audio>
+              <div class="path-row">
+                <span class="mono path">{{ result.path }}</span>
+                <button class="mini" @click="copyPath">复制路径</button>
+                <button class="mini" @click="openOutput">打开目录</button>
+              </div>
+            </section>
+
+            <section v-if="mode === 'single' && history.length" class="card">
+              <div class="editor-head"><span>本次生成</span></div>
+              <div class="hist-list">
+                <button v-for="h in history" :key="h.path" class="hist" @click="replay(h)">
+                  <span class="hist-time mono">{{ h.time }}</span>
+                  <span class="hist-text">{{ h.text }}</span>
+                  <span class="hist-voice">{{ h.voice }}</span>
+                </button>
+              </div>
+            </section>
+
+            <div v-if="error" class="alert">{{ error }}</div>
           </div>
-        </div>
-        <textarea
-          v-model="text"
-          class="text mono"
-          placeholder="输入要合成的文字…（建议一次一句，30 字以内最稳）"
-          spellcheck="false"
-          @keydown.ctrl.enter.prevent="synthesize"
-        ></textarea>
-      </section>
 
-      <section class="ref-editor card">
-        <div class="editor-head">
-          <span>参考音频文本 <em class="muted">（必须和音频逐字对应，留空则用无参考文本模式）</em></span>
-          <span class="muted mono">{{ currentRef ? currentRef.name : '未选择' }}</span>
-        </div>
-        <input
-          v-if="currentRef"
-          v-model="refText"
-          type="text"
-          class="mono"
-          placeholder="这段参考音频里说的原话，例如：嗟乎，师道之不传也久矣"
-          @blur="saveRefText"
-        />
-      </section>
+          <aside class="synth-side">
+            <section class="card params">
+              <div class="param">
+                <label>语速 <b class="mono">{{ params.speed.toFixed(2) }}</b></label>
+                <input type="range" min="0.6" max="1.65" step="0.05" v-model.number="params.speed" />
+              </div>
+              <div class="param">
+                <label>采样步数 <b class="mono">{{ params.steps }}</b></label>
+                <select v-model.number="params.steps">
+                  <option :value="4">4（最快）</option>
+                  <option :value="8">8（推荐）</option>
+                  <option :value="16">16</option>
+                  <option :value="32">32（最慢）</option>
+                </select>
+              </div>
+              <div class="param">
+                <label>top_k <b class="mono">{{ params.topK }}</b></label>
+                <input type="range" min="1" max="100" step="1" v-model.number="params.topK" />
+              </div>
+              <div class="param">
+                <label>top_p <b class="mono">{{ params.topP.toFixed(2) }}</b></label>
+                <input type="range" min="0" max="1" step="0.05" v-model.number="params.topP" />
+              </div>
+              <div class="param">
+                <label>temperature <b class="mono">{{ params.temperature.toFixed(2) }}</b></label>
+                <input type="range" min="0" max="1" step="0.05" v-model.number="params.temperature" />
+              </div>
+              <div class="param">
+                <label>切分方式</label>
+                <select v-model="params.split">
+                  <option v-for="o in splitOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+                </select>
+              </div>
+            </section>
 
-      <section v-if="currentRef" class="wave card">
-        <div class="editor-head">
-          <span>
-            参考音频裁剪
-            <em class="muted">（拖动波形选区，取 3~10 秒）</em>
-          </span>
-          <span class="muted mono">
-            {{ selDur.toFixed(2) }}s / {{ waveDur ? waveDur.toFixed(1) + 's' : '—' }}
-            <em :class="selValid ? 'ok' : 'warn'">{{ selValid ? '范围合规' : '需 3~10 秒' }}</em>
-          </span>
+            <div class="run-box">
+              <template v-if="mode === 'single'">
+                <button class="primary wide" :disabled="!canRun" @click="synthesize">
+                  {{ running ? '合成中…' : '合成语音' }}
+                </button>
+                <span class="kbd-hint">Ctrl + Enter</span>
+              </template>
+              <template v-else>
+                <button class="primary wide" :disabled="!queue.length || !currentRef || batchRunning" @click="runBatch(false)">
+                  {{ batchRunning ? `合成中 ${batchDoneCount}/${batchTotal}` : '开始批量合成' }}
+                </button>
+                <button class="wide" :disabled="batchRunning" @click="buildQueue">重建队列</button>
+                <button v-if="batchRunning" class="wide" :disabled="batchCanceling" @click="cancelBatch">取消</button>
+                <button v-else class="wide" :disabled="!queue.length" @click="runBatch(true)">只重试未完成</button>
+                <button class="wide" :disabled="!batchDir" @click="exportBatch">导出 zip</button>
+              </template>
+            </div>
+          </aside>
         </div>
-        <canvas
-          ref="cvEl"
-          class="wave-cv"
-          @mousedown.prevent="onWaveDown"
-        ></canvas>
-        <div class="wave-actions">
-          <button class="mini" :disabled="trimming || !selValid" @click="previewSel">试听选区</button>
-          <button class="mini" :disabled="trimming || !selValid" @click="saveSelAsRef">保存为新参考</button>
-          <button class="mini" :disabled="!waveDur" @click="resetSel">重置选区</button>
-          <span class="muted" v-if="trimming">处理中…</span>
-        </div>
-        <audio v-if="previewUrl" :src="previewUrl" controls autoplay class="preview-audio"></audio>
-      </section>
-
-      <aside class="rail">
-
-      <section class="params card">
-        <div class="param">
-          <label>语速 <b class="mono">{{ params.speed.toFixed(2) }}</b></label>
-          <input type="range" min="0.6" max="1.65" step="0.05" v-model.number="params.speed" />
-        </div>
-        <div class="param">
-          <label>采样步数 <b class="mono">{{ params.steps }}</b></label>
-          <select v-model.number="params.steps">
-            <option :value="4">4（最快）</option>
-            <option :value="8">8（推荐）</option>
-            <option :value="16">16</option>
-            <option :value="32">32（最慢）</option>
-          </select>
-        </div>
-        <div class="param">
-          <label>top_k <b class="mono">{{ params.topK }}</b></label>
-          <input type="range" min="1" max="100" step="1" v-model.number="params.topK" />
-        </div>
-        <div class="param">
-          <label>top_p <b class="mono">{{ params.topP.toFixed(2) }}</b></label>
-          <input type="range" min="0" max="1" step="0.05" v-model.number="params.topP" />
-        </div>
-        <div class="param">
-          <label>temperature <b class="mono">{{ params.temperature.toFixed(2) }}</b></label>
-          <input type="range" min="0" max="1" step="0.05" v-model.number="params.temperature" />
-        </div>
-        <div class="param wide">
-          <label>切分方式</label>
-          <select v-model="params.split">
-            <option v-for="o in splitOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-          </select>
-        </div>
-      </section>
-
-      <div class="run-row">
-        <template v-if="mode === 'single'">
-          <button class="primary big" :disabled="!canRun" @click="synthesize">
-            {{ running ? '合成中…' : '合成语音' }}
-            <span class="kbd">Ctrl + Enter</span>
-          </button>
-        </template>
-        <template v-else>
-          <button class="ghost" :disabled="batchRunning" @click="buildQueue">按文本重建队列</button>
-          <button class="primary" :disabled="!queue.length || !currentRef || batchRunning" @click="runBatch(false)">
-            {{ batchRunning ? `合成中 ${batchDoneCount}/${batchTotal}` : '开始批量合成' }}
-          </button>
-          <button v-if="batchRunning" class="ghost" :disabled="batchCanceling" @click="cancelBatch">取消</button>
-          <button v-else class="ghost" :disabled="!queue.length" @click="runBatch(true)">只重试未完成</button>
-          <button class="ghost" :disabled="!batchDir" @click="exportBatch">导出 zip</button>
-        </template>
       </div>
-
-      </aside>
-
-      <div v-if="error" class="alert">{{ error }}</div>
-
-      <section v-if="mode === 'batch'" class="batch card">
-        <div class="editor-head">
-          <span>批量队列 <em class="muted">（{{ queue.length }} 句{{ batchDir ? ' · 已输出到 ' + batchDir.split('\\\\').pop() : '' }}）</em></span>
-          <span class="muted mono" v-if="batchRunning">{{ batchDoneCount }} / {{ batchTotal }}</span>
-        </div>
-        <div class="q-list">
-          <div v-for="(q, i) in queue" :key="i" class="q-row" :class="q.status" :title="q.error || ''">
-            <span class="q-index mono">{{ String(i + 1).padStart(2, '0') }}</span>
-            <span class="q-text">{{ q.text }}</span>
-            <span class="q-dur mono" v-if="q.dur">{{ q.dur.toFixed(1) }}s</span>
-            <span class="q-state" :class="q.status">{{ statusLabel(q.status) }}</span>
-            <button v-if="q.path" class="mini" @click="playItem(q)">试听</button>
-          </div>
-          <div v-if="!queue.length" class="empty">点上方「按文本重建队列」——会按句号/问号/感叹号自动拆句，长句再按逗号切到 40 字以内</div>
-        </div>
-      </section>
-
-      <section v-if="mode === 'single' && result" class="result card">
-        <div class="editor-head">
-          <span>合成结果</span>
-          <span class="muted mono">{{ result.elapsed }}s · {{ (result.bytes / 1024).toFixed(0) }} KB</span>
-        </div>
-        <audio :src="result.url" controls autoplay></audio>
-        <div class="path-row">
-          <span class="mono path">{{ result.path }}</span>
-          <button class="mini" @click="copyPath">复制路径</button>
-          <button class="mini" @click="openOutput">打开目录</button>
-        </div>
-      </section>
-
-      <section v-if="mode === 'single' && history.length" class="history card">
-        <div class="editor-head"><span>本次生成</span></div>
-        <div class="hist-list">
-          <button v-for="h in history" :key="h.path" class="hist" @click="replay(h)">
-            <span class="hist-time mono">{{ h.time }}</span>
-            <span class="hist-text">{{ h.text }}</span>
-            <span class="hist-voice">{{ h.voice }}</span>
-          </button>
-        </div>
-      </section>
-      </div>
-      </template>
     </main>
 
     <GuideOverlay :open="showGuide" @close="showGuide = false" />
@@ -800,240 +829,273 @@ function replay(item) {
 </template>
 
 <style scoped>
-.studio { display: flex; height: 100%; background: var(--bg); }
+.studio {
+  display: flex;
+  height: 100%;
+  background: var(--bg);
+}
 
-/* ---------- 左栏 ---------- */
+/* ---------- 侧栏 ---------- */
 .sidebar {
-  width: 264px;
-  flex: 0 0 264px;
-  background: var(--rail);
-  border-right: 1px solid var(--line-soft);
+  width: 274px;
+  flex: 0 0 274px;
   display: flex;
   flex-direction: column;
-  padding: 14px 10px 10px;
+  padding: 16px 12px 12px;
+  gap: 14px;
+  background: var(--rail);
+  border-right: 1px solid var(--line);
+  backdrop-filter: blur(24px) saturate(180%);
 }
-.brand { display: flex; align-items: center; gap: 9px; padding: 2px 6px 14px; }
-.logo {
-  width: 28px; height: 28px; border-radius: 8px;
-  display: grid; place-items: center;
-  background: #14181d; border: 1px solid var(--line);
-}
-.brand-name { font-size: 13px; font-weight: 650; letter-spacing: 0.01em; }
-.brand-sub { color: var(--muted-2); font-size: 10.5px; margin-top: 1px; letter-spacing: 0.02em; }
 
-.section { margin-bottom: 16px; }
-.section.grow { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.section-head {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 8px;
-  padding: 0 6px 6px;
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
-  color: var(--muted-2);
-}
-.head-actions { display: flex; gap: 2px; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 2px 6px 0; }
+.logo { color: var(--accent); display: flex; }
+.brand-name { font-size: 15px; font-weight: 650; letter-spacing: 0.02em; }
+.brand-sub { font-size: 10.5px; color: var(--muted-2); letter-spacing: 0.04em; }
 
-.voice-list, .ref-list { display: flex; flex-direction: column; gap: 1px; overflow: auto; }
-.ref-list { flex: 1; min-height: 0; padding-right: 2px; }
-
-.voice, .ref {
-  display: flex; align-items: center; gap: 8px;
-  width: 100%; height: 30px; padding: 0 8px;
-  text-align: left;
-  border: 1px solid transparent;
-  border-radius: 7px;
+.nav { display: flex; flex-direction: column; gap: 1px; }
+.nav-item {
+  justify-content: flex-start;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--muted);
-  font-size: 12px;
+  color: var(--text-2);
+  font-weight: 480;
 }
-.voice:hover, .ref:hover { background: var(--panel-2); color: var(--text); border-color: transparent; }
-.voice.active, .ref.active {
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
-  color: var(--text);
+.nav-item:hover:not(.on) { background: var(--panel-2); }
+.nav-item.on {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 560;
 }
-.voice-dot { width: 5px; height: 5px; border-radius: 50%; background: #3a434e; flex: 0 0 auto; }
-.voice.active .voice-dot { background: var(--accent); }
-.voice-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.voice-tag { font-size: 10px; color: var(--muted-2); }
-.voice-role {
-  font-size: 9.5px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
+.nav-icon { display: flex; width: 17px; height: 17px; opacity: 0.9; }
+.nav-icon svg { width: 17px; height: 17px; }
+.nav-label { flex: 1; text-align: left; }
+.nav-badge { font-size: 8px; color: var(--ok); }
+
+.side-group { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.side-group.grow { flex: 1; }
+.side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 590;
+  letter-spacing: 0.04em;
   color: var(--muted-2);
-  flex: 0 0 auto;
+  text-transform: uppercase;
 }
-.voice-role.read { color: #7fb6e8; border-color: rgba(127, 182, 232, .35); }
-.voice-role.sing { color: var(--accent); border-color: var(--accent-line); }
+.head-actions { display: flex; gap: 2px; text-transform: none; letter-spacing: 0; }
 
-.ref-row { display: flex; align-items: center; gap: 1px; }
-.ref-row .ref { flex: 1; min-width: 0; }
-.ref-del {
-  flex: 0 0 20px; width: 20px; height: 20px; padding: 0;
-  border: 1px solid transparent; border-radius: 6px;
-  background: transparent; color: var(--muted-2);
-  opacity: 0; transition: opacity 120ms var(--ease), color 120ms var(--ease);
+.side-list { display: flex; flex-direction: column; gap: 1px; }
+.side-list.scroll { overflow: auto; min-height: 0; padding-right: 2px; }
+
+.voice-row {
+  justify-content: flex-start;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font-weight: 450;
+  color: var(--text-2);
 }
-.ref-row:hover .ref-del { opacity: 1; }
-.ref-del:hover { color: var(--err); background: rgba(228, 103, 95, 0.1); border-color: rgba(228, 103, 95, 0.28); }
-.ref-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ref-state { font-size: 10px; color: var(--warn); flex: 0 0 auto; }
+.voice-row:hover:not(.on) { background: var(--panel-2); }
+.voice-row.on { background: var(--panel); box-shadow: var(--shadow-sm); color: var(--text); font-weight: 560; }
+.voice-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted-2); flex: 0 0 auto; }
+.voice-row.on .voice-dot { background: var(--ok); }
+.voice-name { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; }
+.voice-role {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+.voice-role.sing { background: var(--accent-soft); color: var(--accent); }
+
+.ref-item { display: flex; align-items: center; gap: 2px; }
+.ref-row {
+  flex: 1;
+  justify-content: space-between;
+  gap: 8px;
+  height: 30px;
+  padding: 0 9px;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-2);
+  font-weight: 450;
+}
+.ref-row:hover:not(.on) { background: var(--panel-2); }
+.ref-row.on { background: var(--panel); box-shadow: var(--shadow-sm); color: var(--text); }
+.ref-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ref-state { font-size: 10px; color: var(--warn); }
 .ref-state.ok { color: var(--ok); }
+.ref-del {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  color: var(--muted-2);
+  opacity: 0;
+  font-size: 14px;
+}
+.ref-item:hover .ref-del { opacity: 1; }
+.ref-del:hover { color: var(--err); background: transparent; }
 
-.empty { color: var(--muted-2); font-size: 11.5px; padding: 10px 8px; line-height: 1.7; }
-.sidebar-foot {
-  display: flex; gap: 6px; padding-top: 10px; margin-top: 4px;
+.side-foot {
   border-top: 1px solid var(--line-soft);
-}
-.sidebar-foot button { flex: 1; height: 28px; font-size: 11.5px; color: var(--muted); border-color: var(--line); }
-.log {
-  margin: 8px 0 0; max-height: 120px; overflow: auto;
-  background: var(--inset); border: 1px solid var(--line-soft); border-radius: 8px;
-  padding: 8px 10px; font-size: 10.5px; line-height: 1.6; color: var(--muted-2);
-  white-space: pre-wrap; user-select: text;
-}
-
-/* ---------- 主区 ---------- */
-.main { flex: 1; min-width: 0; overflow: auto; padding: 14px 18px 28px; }
-.topbar {
-  position: sticky; top: 0; z-index: 5;
-  display: flex; align-items: center; gap: 14px;
-  margin: -14px -18px 14px; padding: 10px 18px;
-  background: var(--topbar);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--line-soft);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .status {
-  display: flex; align-items: center; gap: 7px;
-  height: 26px; padding: 0 10px 0 8px;
-  border: 1px solid var(--line); border-radius: 999px;
-  font-size: 11.5px; color: var(--muted);
-  background: var(--panel);
-}
-.status .dot { width: 6px; height: 6px; border-radius: 50%; background: #495260; }
-.status.ok { color: var(--text); border-color: rgba(79, 184, 154, 0.3); }
-.status.ok .dot { background: var(--ok); }
-.current { font-size: 11.5px; color: var(--muted-2); }
-.current b { color: var(--text); font-weight: 500; margin-left: 5px; }
-.spacer { flex: 1; }
-
-.seg {
-  display: inline-flex; gap: 1px; padding: 2px;
-  background: var(--inset); border: 1px solid var(--line); border-radius: 8px;
-}
-.seg button {
-  height: 24px; padding: 0 11px;
-  border: 1px solid transparent; border-radius: 6px;
-  background: transparent; color: var(--muted); font-size: 11.5px; font-weight: 500;
-}
-.seg button:hover:not(.on) { color: var(--text); background: transparent; }
-.seg button.on { background: var(--panel-2); color: var(--text); border-color: var(--line); }
-
-.card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 14px 16px;
-  margin-bottom: 12px;
-}
-.editor-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  min-height: 24px; padding-bottom: 10px; margin-bottom: 12px;
-  border-bottom: 1px solid var(--line-soft);
-  font-size: 11px; letter-spacing: 0.06em; color: var(--muted);
-}
-.editor-head em { font-style: normal; font-size: 11px; letter-spacing: 0; color: var(--muted-2); }
-.editor-head em.ok { color: var(--ok); }
-.editor-head em.warn { color: var(--warn); }
-.editor-actions { display: flex; align-items: center; gap: 4px; }
-.count { font-size: 11px; color: var(--muted-2); }
-
-.text {
-  width: 100%; height: 118px; resize: vertical;
-  background: var(--inset); border: 1px solid var(--line); border-radius: 8px;
-  padding: 10px 12px; font-size: 13px; line-height: 1.75; color: var(--text);
-}
-.ref-editor input { width: 100%; }
-
-.params { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 20px; }
-.param { display: flex; flex-direction: column; gap: 6px; }
-.param.wide { grid-column: span 3; }
-.param label {
-  font-size: 11px; color: var(--muted-2);
-  display: flex; justify-content: space-between; align-items: baseline;
-}
-.param label b { color: var(--accent); font-weight: 600; font-size: 11.5px; }
-.param select { width: 100%; }
-
-.workspace { display: block; }
-.workspace.single {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  column-gap: 12px;
-  align-items: start;
-}
-.workspace.single > .editor,
-.workspace.single > .ref-editor,
-.workspace.single > .wave,
-.workspace.single > .result,
-.workspace.single > .history,
-.workspace.single > .alert { grid-column: 1; }
-.rail { grid-column: 2; grid-row: 1 / span 8; position: sticky; top: 52px; align-self: start; }
-.rail .params { display: flex; flex-direction: column; gap: 14px; }
-.rail .param.wide { grid-column: auto; }
-.rail .run-row { margin-top: 10px; }
-.rail .big { width: 100%; min-width: 0; }
-.run-row { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 10px 0 0; }
-.big {
-  min-width: 220px; height: 38px; font-size: 13px;
-  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
-}
-.kbd { font-size: 10px; opacity: 0.55; font-weight: 400; letter-spacing: 0.04em; }
-
-.alert {
-  border: 1px solid rgba(228, 103, 95, 0.32);
-  background: rgba(228, 103, 95, 0.07);
-  color: #e6a3a0;
-  border-radius: 8px;
-  padding: 9px 11px;
-  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
   font-size: 11.5px;
-  line-height: 1.6;
+  color: var(--muted);
+}
+.status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+.status.ok .dot { background: var(--ok); }
+.foot-row { display: flex; gap: 4px; }
+.foot-row button { flex: 1; justify-content: flex-start; }
+.log {
+  max-height: 120px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px;
+  border-radius: var(--radius-xs);
+  background: var(--inset);
+  color: var(--muted);
+  font-size: 10.5px;
   user-select: text;
 }
 
-.result audio { width: 100%; height: 34px; margin-bottom: 8px; }
-.path-row { display: flex; align-items: center; gap: 6px; }
-.path {
-  flex: 1; font-size: 10.5px; color: var(--muted-2);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text;
+/* ---------- 主区 ---------- */
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 28px 14px;
 }
+.page-title h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 680;
+  letter-spacing: -0.01em;
+}
+.page-title p { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); }
+.page-meta { display: flex; gap: 8px; align-items: center; }
+
+.page-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 28px 26px;
+}
+
+.synth {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.synth-main { flex: 1; min-width: 0; }
+.synth-side {
+  width: 268px;
+  flex: 0 0 268px;
+  position: sticky;
+  top: 0;
+}
+
+.editor .count { color: var(--muted-2); font-size: 11.5px; }
+.editor-actions { display: flex; align-items: center; gap: 4px; }
+.text {
+  width: 100%;
+  min-height: 148px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-family: var(--font);
+}
+.wide, input.wide { width: 100%; }
+
+.wave-cv {
+  width: 100%;
+  height: 84px;
+  border-radius: 10px;
+  background: var(--inset);
+  cursor: crosshair;
+  display: block;
+}
+.wave-actions { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.preview-audio { width: 100%; height: 34px; margin-top: 8px; }
+audio { width: 100%; height: 34px; }
+
+.params { display: flex; flex-direction: column; gap: 13px; }
+.param { display: flex; flex-direction: column; gap: 6px; }
+.param label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.param label b { color: var(--text); font-weight: 560; }
+
+.run-box { display: flex; flex-direction: column; gap: 8px; }
+.run-box button.wide { width: 100%; height: 38px; font-size: 13.5px; }
+.kbd-hint { text-align: center; font-size: 11px; color: var(--muted-2); }
+
+.path-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--muted-2);
+}
+
+.q-list { display: flex; flex-direction: column; gap: 1px; max-height: 40vh; overflow: auto; }
+.q-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: var(--radius-xs);
+  font-size: 12.5px;
+}
+.q-row:nth-child(odd) { background: var(--panel-2); }
+.q-index { color: var(--muted-2); font-size: 11px; width: 20px; }
+.q-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-dur { color: var(--muted-2); font-size: 11px; }
+.q-state { font-size: 11px; color: var(--muted-2); }
+.q-state.done { color: var(--ok); }
+.q-state.failed { color: var(--err); }
+.q-state.running { color: var(--accent); }
 
 .hist-list { display: flex; flex-direction: column; gap: 1px; }
 .hist {
-  display: flex; align-items: center; gap: 10px; width: 100%;
-  height: 30px; padding: 0 8px;
-  background: transparent; border: 1px solid transparent; border-radius: 7px;
-  text-align: left; color: var(--muted);
+  justify-content: flex-start;
+  gap: 10px;
+  height: 30px;
+  padding: 0 8px;
+  background: transparent;
+  border-radius: var(--radius-xs);
+  font-weight: 450;
 }
-.hist:hover { background: var(--panel-2); color: var(--text); border-color: transparent; }
-.hist-time { font-size: 10.5px; color: var(--muted-2); }
-.hist-text { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hist-voice { font-size: 10.5px; color: var(--muted-2); }
+.hist:hover { background: var(--panel-2); }
+.hist-time { color: var(--muted-2); font-size: 11px; }
+.hist-text { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-voice { color: var(--muted-2); font-size: 11px; }
 
-.wave .wave-cv {
-  width: 100%; height: 64px; display: block; cursor: crosshair;
-  background: var(--inset); border: 1px solid var(--line); border-radius: 8px;
-}
-.wave-actions { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
-.preview-audio { width: 100%; height: 30px; margin-top: 8px; }
-
-.batch .q-list { display: flex; flex-direction: column; gap: 1px; max-height: 420px; overflow: auto; }
-.q-row { display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 8px; border: 1px solid transparent; border-radius: 7px; }
-.q-row:hover { background: var(--panel-2); }
-.q-row.running { background: var(--accent-soft); border-color: var(--accent-line); }
-.q-index { font-size: 10.5px; color: var(--muted-2); width: 20px; }
-.q-text { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.q-dur { font-size: 10.5px; color: var(--muted-2); }
+.ok { color: var(--ok); }
+.warn { color: var(--warn); }
 </style>
