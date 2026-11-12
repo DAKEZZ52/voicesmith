@@ -1033,6 +1033,21 @@ async function runSelfTest() {
 
 // ---------- voices / refs ----------
 
+function currentVoiceName() {
+  try {
+    const cfg = readConfig();
+    if (cfg && cfg.currentVoice) return String(cfg.currentVoice);
+    const yaml = require('js-yaml');
+    const cfgPath = path.join(payloadRoot(), 'GPT_SoVITS', 'configs', 'tts_infer.yaml');
+    const doc = yaml.load(fs.readFileSync(cfgPath, 'utf8')) || {};
+    const v = (doc.custom && doc.custom.vits_weights_path) || '';
+    const m = /([^/\\]+?)_e\d+_s\d+\.pth$/i.exec(v) || /([^/\\]+?)\.pth$/i.exec(v);
+    return m ? m[1].toLowerCase() : '';
+  } catch (_) {
+    return '';
+  }
+}
+
 function voiceRoles() {
   const cfg = readConfig();
   return (cfg && cfg.voiceRoles) || {};
@@ -1221,6 +1236,117 @@ ipcMain.handle('state', () => ({
 }));
 ipcMain.handle('boot', async () => { await boot(); return true; });
 ipcMain.handle('voices', () => (payloadReady() ? listVoices() : { pairs: [], sovits: [], gpt: [] }));
+// 收集一个音色在本地占用的全部数据：权重 / 训练目录 / 切片 / 标注 / 角色配置
+function voiceAssets(name) {
+  const root = payloadRoot();
+  const key = String(name || '').trim();
+  const out = { name: key, files: [], dirs: [], role: null };
+  if (!key) return out;
+
+  const weightsRoot = fs.existsSync(root) ? fs.readdirSync(root) : [];
+  for (const dirName of weightsRoot) {
+    if (!/^(SoVITS|GPT)_weights/.test(dirName)) continue;
+    const dir = path.join(root, dirName);
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) continue;
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.toLowerCase().endsWith('.pth') && !f.toLowerCase().endsWith('.ckpt')) continue;
+      const base = f.split(/[-_.]/)[0].toLowerCase();
+      if (base === key.toLowerCase()) out.files.push(path.join(dir, f));
+    }
+  }
+
+  const logDir = path.join(root, 'logs', key);
+  if (fs.existsSync(logDir)) out.dirs.push(logDir);
+
+  const outputDir = path.join(root, 'output');
+  if (fs.existsSync(outputDir)) {
+    for (const f of fs.readdirSync(outputDir)) {
+      const low = f.toLowerCase();
+      const hit = low === key.toLowerCase() + '_sliced' || low === key.toLowerCase() + '_asr'
+        || low.startsWith(key.toLowerCase() + '_sliced') || low.startsWith(key.toLowerCase() + '_asr');
+      if (hit) out.dirs.push(path.join(outputDir, f));
+    }
+    for (const f of fs.readdirSync(outputDir)) {
+      if (f.toLowerCase() === key.toLowerCase() + '.txt' || f.toLowerCase() === key.toLowerCase() + '.list') {
+        out.files.push(path.join(outputDir, f));
+      }
+    }
+  }
+
+  const roles = voiceRoles();
+  if (roles[key]) out.role = roles[key];
+
+  return out;
+}
+
+function voiceAssetsSize(assets) {
+  let bytes = 0;
+  const walk = (p) => {
+    try {
+      const st = fs.lstatSync(p);
+      if (st.isDirectory()) {
+        for (const f of fs.readdirSync(p)) walk(path.join(p, f));
+      } else {
+        bytes += st.size;
+      }
+    } catch (_) {}
+  };
+  assets.files.forEach(walk);
+  assets.dirs.forEach(walk);
+  return bytes;
+}
+
+ipcMain.handle('voice:usage', (_e, { name }) => {
+  try {
+    const assets = voiceAssets(name);
+    const bytes = voiceAssetsSize(assets);
+    return {
+      ok: true,
+      files: assets.files.length,
+      dirs: assets.dirs.length,
+      sizeMB: +(bytes / 1048576).toFixed(1),
+      role: assets.role
+    };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+});
+
+// 删除音色：连带训练数据一起删（不可恢复）
+ipcMain.handle('voice:delete', async (_e, { name }) => {
+  try {
+    const key = String(name || '').trim();
+    if (!key) return { ok: false, error: '缺少音色名' };
+    const cur = currentVoiceName();
+    if (cur && cur.toLowerCase() === key.toLowerCase()) {
+      return { ok: false, error: '这是当前正在使用的音色，先切到别的音色再删' };
+    }
+    const assets = voiceAssets(key);
+    const bytes = voiceAssetsSize(assets);
+    let removed = 0;
+    for (const f of assets.files) {
+      try { fs.rmSync(f, { force: true }); removed += 1; } catch (_) {}
+    }
+    for (const d of assets.dirs) {
+      try { fs.rmSync(d, { recursive: true, force: true }); removed += 1; } catch (_) {}
+    }
+    if (assets.role) {
+      const map = Object.assign({}, voiceRoles());
+      delete map[key];
+      writeConfig({ voiceRoles: map });
+    }
+    log('已删除音色 ' + key + '：' + assets.files.length + ' 个文件 / ' + assets.dirs.length + ' 个目录');
+    return {
+      ok: true,
+      deletedFiles: assets.files.length,
+      deletedDirs: assets.dirs.length,
+      freedMB: +(bytes / 1048576).toFixed(1)
+    };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+});
+
 ipcMain.handle('voices:set-role', (_e, { name, role }) => {
   try {
     const map = Object.assign({}, voiceRoles());
@@ -1358,6 +1484,10 @@ ipcMain.handle('update-ref-text', (_e, { path: p, text }) => {
 });
 
 async function setVoice(sovits, gpt) {
+  try {
+    const m = /([^/\\\\]+?)_e\\d+_s\\d+\\.pth$/i.exec(String(sovits || '')) || /([^/\\\\]+?)\\.pth$/i.exec(String(sovits || ''));
+    if (m) writeConfig({ currentVoice: m[1].toLowerCase() });
+  } catch (_) {}
   const get = (p) => new Promise((resolve, reject) => {
     http.get({ host: '127.0.0.1', port: apiPort, path: p, timeout: 60000 }, (res) => {
       const c = [];
@@ -1380,7 +1510,11 @@ async function setVoice(sovits, gpt) {
   }
 }
 
-ipcMain.handle('select-voice', async (_e, { sovits, gpt }) => setVoice(sovits, gpt));
+ipcMain.handle('select-voice', async (_e, { sovits, gpt }) => {
+  const m = /([^/\\\\]+?)_e\\d+_s\\d+\\.pth$/i.exec(String(sovits || '')) || /([^/\\\\]+?)\\.pth$/i.exec(String(sovits || ''));
+  if (m) writeConfig({ currentVoice: m[1].toLowerCase() });
+  return setVoice(sovits, gpt);
+});
 
 ipcMain.handle('tts', async (_e, opts) => {
   const t0 = Date.now();

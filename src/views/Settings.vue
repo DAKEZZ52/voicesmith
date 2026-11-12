@@ -30,6 +30,29 @@ const modelGroups = computed(() => {
 const activeCount = computed(() => modelGroups.value.reduce((s, g) => s + g.active.length, 0));
 const historyCount = computed(() => modelGroups.value.reduce((s, g) => s + g.history.length, 0));
 
+async function removeVoice(name) {
+  const use = await window.api.voiceUsage({ name });
+  if (!use.ok) { error.value = use.error; return; }
+  const detail = [
+    '音色：' + name,
+    '将删除：',
+    '· 权重文件 ' + use.files + ' 个',
+    '· 训练目录 ' + use.dirs + ' 个（切片、标注、特征、检查点）',
+    '· 共约 ' + use.sizeMB + ' MB',
+    '',
+    '删除后无法恢复，需要重新训练。确定删除？'
+  ].join('\n');
+  if (!window.confirm(detail)) return;
+  busy.value = 'voice';
+  try {
+    const r = await window.api.voiceDelete({ name });
+    if (!r.ok) { error.value = r.error; return; }
+    await refresh();
+  } finally {
+    busy.value = '';
+  }
+}
+
 async function setRole(name, role) {
   await window.api.setVoiceRole({ name, role });
   await refresh();
@@ -141,6 +164,8 @@ async function checkUpdate() {
               </select>
               <span class="muted" v-if="g.active.length === 2">SoVITS + GPT 成对</span>
               <span class="muted" v-else>缺少配对文件，可能无法合成</span>
+              <span class="spacer"></span>
+              <button class="mini danger voice-del" :disabled="busy === 'voice'" @click="removeVoice(g.voice)">删除音色</button>
             </div>
             <div v-for="m in g.active" :key="m.path" class="row">
               <span class="badge" :class="m.kind">{{ m.kind === 'sovits' ? 'SoVITS' : 'GPT' }}</span>
@@ -266,6 +291,9 @@ async function checkUpdate() {
 .voice-group:first-child { border-top: none; margin-top: 0; padding-top: 0; }
 .group-head { display: flex; align-items: baseline; gap: 8px; padding: 2px 6px 4px; }
 .group-head b { font-size: 12.5px; font-weight: 650; }
+.group-head .spacer { flex: 1; }
+.voice-del { color: var(--muted-2); }
+.voice-del:hover:not(:disabled) { color: var(--err); background: rgba(215, 0, 21, .08); }
 .group-head .tag {
   font-size: 10px;
   line-height: 1;
