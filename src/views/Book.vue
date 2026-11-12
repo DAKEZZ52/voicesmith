@@ -205,132 +205,151 @@ async function openBook(b) {
 </script>
 
 <template>
-  <div class="book">
-    <section class="card">
-      <div class="editor-head">
-        <span>书稿</span>
-        <div class="head-actions">
-          <button class="mini" @click="importTxt">导入 txt</button>
-          <button class="mini" @click="text = ''">清空</button>
-        </div>
-      </div>
-      <textarea v-model="text" class="book-text mono" placeholder="粘贴整本书或长文。程序会自动识别「第一章 / 第1章 / Chapter 1 / # 标题」分章；没有标题就按段落每 3000 字切一章。"></textarea>
-      <div class="meta-row">
-        <span>{{ chars }} 字 · {{ estMinutes < 1 ? '不到 1' : '约 ' + estMinutes }} 分钟音频</span>
-        <span class="muted">章节上限 <input v-model="maxChars" class="num" type="number" min="500" step="500" /> 字</span>
-      </div>
-    </section>
-
-    <section v-if="parsed" class="card">
-      <div class="editor-head">
-        <span>章节 <em class="muted">{{ chapters.length }} 章 · {{ total }} 句</em></span>
-        <button class="mini" @click="parse">重新分章</button>
-      </div>
-      <div class="chapter-list">
-        <div v-for="c in chapters" :key="c.index" class="chapter-row" :class="chaptersState[c.index]">
-          <span class="idx">{{ String(c.index + 1).padStart(2, '0') }}</span>
-          <span class="title">{{ c.title }}</span>
-          <span class="meta">{{ c.sentences.length }} 句 · {{ c.chars }} 字</span>
-          <span class="state">{{ chaptersState[c.index] === 'done' ? '完成' : chaptersState[c.index] === 'running' ? '合成中' : chaptersState[c.index] === 'failed' ? '失败' : '' }}</span>
-        </div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="editor-head">
-        <span>生成</span>
-        <span class="muted">{{ percent }}% · {{ done }}/{{ total }} 句</span>
-      </div>
-      <div class="bar" v-if="running || done"><i :style="{ width: percent + '%' }"></i></div>
-      <div class="opts">
-        <label>书稿名 <input v-model="bookName" class="txt" placeholder="我的有声书" /></label>
-        <label>章节间隔 <input v-model="gapSec" class="num" type="number" min="0" max="5" step="0.2" /> 秒</label>
-        <label>语速 <input v-model="speed" class="num" type="number" min="0.5" max="2" step="0.05" /></label>
-      </div>
-      <div class="line mono" v-if="currentLine">{{ currentLine.slice(0, 40) }}</div>
-      <div class="actions">
-        <button class="primary" :disabled="running" @click="start">{{ running ? '合成中…' : '开始生成' }}</button>
-        <button class="mini" :disabled="!running || stopping" @click="stop">{{ stopping ? '正在停止…' : '停止' }}</button>
-        <span class="muted hint">中断后到下方「历史」里点「继续未完成」，已合成的句子会跳过</span>
-      </div>
-      <div v-if="exportInfo && exportInfo.status === 'done'" class="ok">
-        已导出 m4a（带章节）：<span class="mono">{{ exportInfo.path }}</span>
-        <button v-if="exportInfo.srt" class="mini" @click="openDir(exportInfo.srt)">打开字幕 srt</button>
-      </div>
-      <div v-if="error" class="alert">{{ error }}</div>
-    </section>
-
-    <section class="card">
-      <div class="editor-head">
-        <span>历史 <em class="muted">{{ history.length }} 本</em></span>
-        <div class="head-actions">
-          <button class="mini" @click="openOutput">打开目录</button>
-          <button class="mini" @click="refreshHistory">刷新</button>
-        </div>
-      </div>
-      <div class="list">
-        <div v-for="b in history" :key="b.dir" class="row">
-          <span class="name">{{ b.name }}</span>
-          <span class="meta">{{ b.chapters }} 章</span>
-          <span class="meta mono">{{ b.mtime.slice(5, 16).replace('T', ' ') }}</span>
-          <button class="mini" @click="toggleDetail(b)">{{ detail && detail.dir === b.dir ? '收起' : '展开' }}</button>
-          <button class="mini" @click="openBook(b)">{{ b.m4a ? '打开 m4a' : '打开目录' }}</button>
-        </div>
-        <div v-if="!history.length" class="empty">还没有生成过有声书</div>
-      </div>
-
-      <div v-if="detail" class="detail">
-        <div class="detail-head">
-          <b>{{ detail.name }}</b>
-          <span class="muted">{{ detail.chapters.length }} 章 · 点「重做」只重新合成该章并刷新 m4a</span>
-          <span class="spacer"></span>
-          <button class="mini" :disabled="running" @click="resumeBook">{{ running ? '处理中…' : '继续未完成' }}</button>
-          <button v-if="detail.srt" class="mini" @click="openDir(detail.srt)">打开字幕</button>
-          <button class="mini" @click="openDir(detail.dir)">打开本书目录</button>
-        </div>
-        <div class="chapter-list">
-          <div v-for="c in detail.chapters" :key="c.index" class="chapter-row" :class="{ done: c.hasWav }">
-            <span class="idx">{{ String(c.index + 1).padStart(2, '0') }}</span>
-            <span class="title">{{ c.title }}</span>
-            <span class="meta">{{ c.sentences }} 句</span>
-            <span class="state">{{ c.hasWav ? '已生成' : '未生成' }}</span>
-            <button class="mini" :disabled="running" @click="redoChapter(c)">
-              {{ redeeming === c.index ? '重做中…' : '重做' }}
-            </button>
+  <div class="book split">
+    <div class="split-main">
+      <section class="card">
+        <div class="editor-head">
+          <span>书稿</span>
+          <div class="head-actions">
+            <button class="mini" @click="importTxt">导入 txt</button>
+            <button class="mini" @click="text = ''">清空</button>
           </div>
         </div>
-      </div>
-    </section>
+        <textarea v-model="text" class="book-text" placeholder="粘贴整本书或长文。程序会自动识别「第一章 / 第1章 / Chapter 1 / # 标题」分章；没有标题就按段落每 3000 字切一章。"></textarea>
+        <div class="meta-row">
+          <span>{{ chars }} 字 · {{ estMinutes < 1 ? '不到 1' : '约 ' + estMinutes }} 分钟音频</span>
+          <span class="muted">{{ parsed ? chapters.length + ' 章 · ' + total + ' 句' : '还没分章' }}</span>
+        </div>
+      </section>
+
+      <section v-if="parsed" class="card">
+        <div class="editor-head">
+          <span>章节</span>
+          <button class="mini" @click="parse">重新分章</button>
+        </div>
+        <div class="chapter-list">
+          <div v-for="c in chapters" :key="c.index" class="chapter-row" :class="chaptersState[c.index]">
+            <span class="idx">{{ String(c.index + 1).padStart(2, '0') }}</span>
+            <span class="title">{{ c.title }}</span>
+            <span class="meta">{{ c.sentences.length }} 句 · {{ c.chars }} 字</span>
+            <span class="state">{{ chaptersState[c.index] === 'done' ? '完成' : chaptersState[c.index] === 'running' ? '合成中' : chaptersState[c.index] === 'failed' ? '失败' : '' }}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="editor-head">
+          <span>历史 <em class="muted">{{ history.length }} 本</em></span>
+          <div class="head-actions">
+            <button class="mini" @click="openOutput">打开目录</button>
+            <button class="mini" @click="refreshHistory">刷新</button>
+          </div>
+        </div>
+        <div class="list">
+          <div v-for="b in history" :key="b.dir" class="row">
+            <span class="name">{{ b.name }}</span>
+            <span class="meta">{{ b.chapters }} 章</span>
+            <span class="meta mono">{{ b.mtime.slice(5, 16).replace('T', ' ') }}</span>
+            <button class="mini" @click="toggleDetail(b)">{{ detail && detail.dir === b.dir ? '收起' : '展开' }}</button>
+            <button class="mini" @click="openBook(b)">{{ b.m4a ? '打开 m4a' : '打开目录' }}</button>
+          </div>
+          <div v-if="!history.length" class="empty">还没有生成过有声书</div>
+        </div>
+
+        <div v-if="detail" class="detail">
+          <div class="detail-head">
+            <b>{{ detail.name }}</b>
+            <span class="muted">{{ detail.chapters.length }} 章 · 点「重做」只重新合成该章并刷新 m4a</span>
+            <span class="spacer"></span>
+            <button class="mini" :disabled="running" @click="resumeBook">{{ running ? '处理中…' : '继续未完成' }}</button>
+            <button v-if="detail.srt" class="mini" @click="openDir(detail.srt)">打开字幕</button>
+            <button class="mini" @click="openDir(detail.dir)">打开本书目录</button>
+          </div>
+          <div class="chapter-list">
+            <div v-for="c in detail.chapters" :key="c.index" class="chapter-row" :class="{ done: c.hasWav }">
+              <span class="idx">{{ String(c.index + 1).padStart(2, '0') }}</span>
+              <span class="title">{{ c.title }}</span>
+              <span class="meta">{{ c.sentences }} 句</span>
+              <span class="state">{{ c.hasWav ? '已生成' : '未生成' }}</span>
+              <button class="mini" :disabled="running" @click="redoChapter(c)">
+                {{ redeeming === c.index ? '重做中…' : '重做' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="split-side">
+      <section class="inspector">
+        <div class="inspector-head">生成设置</div>
+
+        <div class="field">
+          <div class="field-label"><span>书稿名</span></div>
+          <input v-model="bookName" type="text" placeholder="我的有声书" />
+        </div>
+
+        <div class="field">
+          <div class="field-label"><span>章节间隔</span><b class="mono">{{ gapSec }} 秒</b></div>
+          <input v-model="gapSec" type="range" min="0" max="3" step="0.1" />
+        </div>
+
+        <div class="field">
+          <div class="field-label"><span>语速</span><b class="mono">{{ Number(speed).toFixed(2) }}</b></div>
+          <input v-model="speed" type="range" min="0.7" max="1.4" step="0.05" />
+        </div>
+
+        <div class="field">
+          <div class="field-label"><span>每章上限</span><b class="mono">{{ maxChars }} 字</b></div>
+          <input v-model="maxChars" type="range" min="500" max="8000" step="500" />
+        </div>
+
+        <div class="inspector-sep"></div>
+
+        <div class="field">
+          <div class="field-label"><span>进度</span><b class="mono">{{ percent }}%</b></div>
+          <div class="bar"><i :style="{ width: percent + '%' }"></i></div>
+          <span class="muted" style="font-size:11.5px">{{ done }} / {{ total }} 句</span>
+        </div>
+
+        <div v-if="currentLine" class="line mono">{{ currentLine.slice(0, 40) }}</div>
+
+        <div class="inspector-actions">
+          <button class="primary" :disabled="running" @click="start">{{ running ? '合成中…' : '开始生成' }}</button>
+          <button class="mini" :disabled="!running || stopping" @click="stop">{{ stopping ? '正在停止…' : '停止' }}</button>
+          <span class="muted hint">中断后到「历史」里点「继续未完成」，已合成的句子会跳过</span>
+        </div>
+
+        <div v-if="exportInfo && exportInfo.status === 'done'" class="ok">
+          已导出 m4a（带章节）：<span class="mono">{{ exportInfo.path }}</span>
+          <button v-if="exportInfo.srt" class="mini" @click="openDir(exportInfo.srt)">打开字幕 srt</button>
+        </div>
+        <div v-if="error" class="alert" style="margin-top:12px">{{ error }}</div>
+      </section>
+    </aside>
   </div>
 </template>
 
 <style scoped>
-.book { display: flex; flex-direction: column; gap: 14px; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
-.editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 24px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--line-soft); font-size: 11px; letter-spacing: .06em; color: var(--muted); }
-.editor-head em { font-style: normal; margin-left: 6px; }
 .head-actions { display: flex; gap: 6px; }
-.book-text { width: 100%; min-height: 180px; max-height: 300px; resize: vertical; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 12px 14px; font-size: 13px; line-height: 1.7; }
+.book-text { width: 100%; min-height: 220px; max-height: 360px; resize: vertical; font-size: 13.5px; line-height: 1.75; }
 .meta-row { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11.5px; color: var(--muted-2); }
-.num { width: 64px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 3px 6px; font-size: 12px; }
 .detail { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
-.detail-head { display: flex; align-items: center; gap: 10px; font-size: 12.5px; margin-bottom: 8px; }\n.detail-head .spacer { flex: 1; }
+.detail-head { display: flex; align-items: center; gap: 10px; font-size: 12.5px; margin-bottom: 8px; }
+.detail-head .spacer { flex: 1; }
 .detail-head .muted { font-size: 11px; }
 .chapter-row .state { width: 52px; }
 .chapter-list { max-height: 240px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
 .chapter-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; border: 1px solid transparent; font-size: 12.5px; }
 .chapter-row:hover { background: var(--panel-2); }
-.chapter-row.running { border-color: rgba(255, 138, 61, .3); background: rgba(255, 138, 61, .07); }
+.chapter-row.running { border-color: var(--accent-line); background: var(--accent-soft); }
 .chapter-row.done { border-color: rgba(74, 222, 128, .2); }
 .chapter-row .idx { color: var(--muted-2); font-size: 11px; }
 .chapter-row .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chapter-row .meta { color: var(--muted-2); font-size: 11px; }
 .chapter-row .state { color: var(--ok); font-size: 11px; width: 40px; text-align: right; }
 .bar { height: 3px; border-radius: 2px; background: var(--line-soft); overflow: hidden; margin: 6px 0 12px; }
-.bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), #ffb066); transition: width .3s ease; }
-.opts { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
-.opts label { display: flex; align-items: center; gap: 6px; }
-.txt { width: 180px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 4px 8px; font-size: 12px; }
+.bar i { display: block; height: 100%; background: var(--accent); transition: width .3s ease; }
 .line { color: var(--muted-2); font-size: 11.5px; margin-bottom: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .actions { display: flex; align-items: center; gap: 10px; }
 .primary { height: 34px; padding: 0 20px; border-radius: 8px; background: var(--accent); border-color: var(--accent); color: #1a1206; font-weight: 650; font-size: 13px; }

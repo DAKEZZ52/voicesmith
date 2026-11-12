@@ -147,64 +147,42 @@ function openRvc() { if (info.value.root) window.api.openDir({ path: info.value.
 </script>
 
 <template>
-  <div class="cover">
-    <section class="card">
-      <div class="editor-head">
-        <span>翻唱（RVC 音色转换）</span>
-        <span class="head-actions">
-          <span class="muted mono ellipsis" :title="info.root">{{ info.root }}</span>
-          <button class="mini" @click="openRvc">打开 RVC 目录</button>
-          <button class="mini" @click="refresh">刷新模型</button>
-        </span>
-      </div>
-
-      <div v-if="!info.ok" class="alert">
-        没有找到 RVC 安装。{{ info.error }}<br />
-        <span class="muted">需要目录里含 <code>.venv\Scripts\python.exe</code>、<code>assets\weights</code> 和 <code>assets\indices</code>。</span>
-      </div>
-
-      <template v-else>
-        <div class="row">
-          <span class="lbl">歌曲</span>
-          <button class="mini" @click="pickAudio">选择音频</button>
-          <span class="muted mono ellipsis">{{ fileName || '选一首歌（mp3/wav/m4a 都行）' }}</span>
-        </div>
-        <div class="row">
-          <span class="lbl">音色模型</span>
-          <select v-model="model" class="sel">
-            <option v-for="m in info.models" :key="m.path" :value="m.path">{{ m.name }} · {{ m.sizeMB }}MB</option>
-          </select>
-        </div>
-        <div class="row">
-          <span class="lbl">检索索引</span>
-          <select v-model="index" class="sel">
-            <option value="">不使用</option>
-            <option v-for="x in info.indices" :key="x.path" :value="x.path">{{ x.name }}</option>
-          </select>
-          <span class="muted">检索率 <input v-model="indexRate" class="num" type="number" min="0" max="1" step="0.05" /></span>
-        </div>
-        <div class="row">
-          <span class="lbl">参数</span>
-          <span class="opts">
-            <label><input v-model="separate" type="checkbox" /> 自动分离人声/伴奏</label>
-            <span>变调 <input v-model="pitch" class="num" type="number" min="-12" max="12" step="1" /> 半音</span>
+  <div class="cover split">
+    <div class="split-main">
+      <section class="card">
+        <div class="editor-head">
+          <span>源音频</span>
+          <span class="head-actions">
+            <button class="mini" @click="openRvc">打开 RVC 目录</button>
+            <button class="mini" @click="refresh">刷新模型</button>
           </span>
         </div>
 
-        <div class="bar" v-if="running"><i :class="{ active: running }"></i></div>
-        <div class="actions">
-          <button class="primary" :disabled="running || !inputFile" @click="convert">
-            {{ running ? (stageLabel[stage] || '处理中…') : '开始转换' }}
-          </button>
-          <button class="mini" :disabled="!running" @click="stop">停止</button>
-          <span class="muted" v-if="running">首次运行要加载模型，约 10~60 秒</span>
-          <span class="hint-text" v-else-if="hintText">{{ hintText }}</span>
+        <div v-if="!info.ok" class="alert">
+          没有找到 RVC 安装。{{ info.error }}<br />
+          <span class="muted">需要目录里含 <code>.venv\Scripts\python.exe</code>、<code>assets\weights</code> 和 <code>assets\indices</code>。</span>
         </div>
 
-        <div v-if="result" class="ok">
-          已生成：<span class="mono">{{ result.path }}</span>
-          <button class="mini" @click="play">再播一次</button>
-          <button class="mini" @click="openOutput">打开目录</button>
+        <template v-else>
+          <div class="pick">
+            <button class="primary" @click="pickAudio">选择歌曲</button>
+            <span class="muted mono ellipsis" :title="fileName">{{ fileName || 'mp3 / wav / m4a 都可以' }}</span>
+          </div>
+          <p class="hint">选好后在右侧点「开始转换」。带伴奏的歌不用自己分离，勾上自动处理就行。</p>
+        </template>
+      </section>
+
+      <section v-if="result" class="card">
+        <div class="editor-head">
+          <span>转换结果</span>
+          <span class="head-actions">
+            <button class="mini" @click="play">再播一次</button>
+            <button class="mini" @click="openOutput">打开目录</button>
+          </span>
+        </div>
+        <audio ref="audioEl" controls style="width:100%;height:34px"></audio>
+        <div class="path-row">
+          <span class="mono path">{{ result.path }}</span>
         </div>
 
         <div v-if="score" class="score" :class="score.grade">
@@ -220,26 +198,77 @@ function openRvc() { if (info.value.root) window.api.openDir({ path: info.value.
           </div>
           <p class="score-tip">{{ score.tip }}</p>
         </div>
+      </section>
 
-        <div v-if="error" class="alert">{{ error }}</div>
-        <audio ref="audioEl" style="display:none"></audio>
-      </template>
-    </section>
+      <div v-if="error" class="alert">{{ error }}</div>
 
-    <section class="card">
-      <div class="editor-head"><span>说明</span></div>
-      <ul class="tips">
-        <li>先用 UVR5 把歌分离成人声和伴奏（CPU 处理，约 1~3 分钟/首）</li>
-        <li>再用 RVC 把人声换成你训练的音色（GPU，约 15 秒/首）</li>
-        <li>最后按 -16 LUFS 混音导出，结果在输出目录</li>
-        <li>转换期间会暂停语音合成服务以释放显存，结束后自动恢复</li>
-      </ul>
-    </section>
+      <section class="card">
+        <div class="editor-head"><span>说明</span></div>
+        <ul class="tips">
+          <li>先用 UVR5 把歌分离成人声和伴奏（CPU 处理，约 1~3 分钟/首）</li>
+          <li>再用 RVC 把人声换成你训练的音色（GPU，约 15 秒/首）</li>
+          <li>最后按 -16 LUFS 混音导出，结果在输出目录</li>
+          <li>转换期间会暂停语音合成服务以释放显存，结束后自动恢复</li>
+        </ul>
+      </section>
+    </div>
+
+    <aside class="split-side">
+      <section class="inspector">
+        <div class="inspector-head">转换设置</div>
+
+        <div class="field">
+          <div class="field-label"><span>音色模型</span></div>
+          <select v-model="model">
+            <option v-for="m in info.models" :key="m.path" :value="m.path">{{ m.name }} · {{ m.sizeMB }}MB</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <div class="field-label"><span>检索索引</span></div>
+          <select v-model="index">
+            <option value="">不使用</option>
+            <option v-for="x in info.indices" :key="x.path" :value="x.path">{{ x.name }}</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <div class="field-label"><span>检索率</span><b class="mono">{{ Number(indexRate).toFixed(2) }}</b></div>
+          <input v-model="indexRate" type="range" min="0" max="1" step="0.05" />
+        </div>
+
+        <div class="inspector-sep"></div>
+
+        <div class="field">
+          <label class="check-line"><input v-model="separate" type="checkbox" /> 自动分离人声 / 伴奏</label>
+        </div>
+
+        <div class="field">
+          <div class="field-label"><span>变调</span><b class="mono">{{ pitch > 0 ? '+' + pitch : pitch }} 半音</b></div>
+          <input v-model="pitch" type="range" min="-12" max="12" step="1" />
+        </div>
+
+        <div class="inspector-actions">
+          <button class="primary" :disabled="running || !inputFile" @click="convert">
+            {{ running ? (stageLabel[stage] || '处理中…') : '开始转换' }}
+          </button>
+          <button class="mini" :disabled="!running" @click="stop">停止</button>
+          <span class="muted hint" v-if="running">首次运行要加载模型，约 10~60 秒</span>
+          <span class="hint-text" v-else-if="hintText">{{ hintText }}</span>
+        </div>
+      </section>
+    </aside>
   </div>
 </template>
 
 <style scoped>
-.cover { display: flex; flex-direction: column; gap: 14px; }
+.pick { display: flex; align-items: center; gap: 12px; margin: 4px 0 6px; }
+.pick .ellipsis { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.path-row { margin-top: 10px; }
+.path-row .path { font-size: 11px; color: var(--muted-2); word-break: break-all; }
+.check-line { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); }
+.hint-text { font-size: 11.5px; color: var(--accent); text-align: center; }
+.cover { gap: 16px; }
 .hint-text { font-size: 11px; color: var(--accent); }
 
 .score {

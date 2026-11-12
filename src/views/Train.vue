@@ -127,75 +127,97 @@ function statusText(s) {
 </script>
 
 <template>
-  <div class="train">
-    <section class="card">
-      <div class="editor-head"><span>训练素材</span><span class="muted mono">{{ fileCount ? fileCount + ' 个文件' : '' }}</span></div>
-      <div class="pick-row">
-        <button class="primary" @click="pickDir">选择素材文件夹</button>
-        <span class="mono dir">{{ dir || '未选择（建议 5~30 分钟同一人的干净录音）' }}</span>
-      </div>
-      <p class="hint">
-        支持 wav / mp3 / flac / m4a。程序会自动切片（3~10 秒）、识别文字打标、提取特征；
-        素材越多样（不同句子、不同语气），训出来的音色越不容易「哑」。
-      </p>
-    </section>
+  <div class="train split">
+    <div class="split-main">
+      <section class="card">
+        <div class="editor-head"><span>训练素材</span><span class="muted mono">{{ fileCount ? fileCount + ' 个文件' : '' }}</span></div>
+        <div class="pick-row">
+          <button class="primary" @click="pickDir">选择素材文件夹</button>
+          <span class="mono dir">{{ dir || '未选择（建议 5~30 分钟同一人的干净录音）' }}</span>
+        </div>
+        <p class="hint">
+          支持 wav / mp3 / flac / m4a。程序会自动切片（3~10 秒）、识别文字打标、提取特征；
+          素材越多样（不同句子、不同语气），训出来的音色越不容易「哑」。
+        </p>
+      </section>
 
-    <section class="card">
-      <div class="editor-head"><span>训练参数</span></div>
-      <div class="grid">
-        <label>实验名<input v-model="expName" type="text" class="mono" :disabled="busy" /></label>
-        <label>SoVITS 轮数<input type="number" min="4" max="50" v-model.number="s2Epochs" :disabled="busy" /></label>
-        <label>GPT 轮数<input type="number" min="5" max="100" v-model="s1Epochs" :disabled="busy" /></label>
-        <label>batch（6GB 显存填 1~2）<input type="number" min="1" max="8" v-model.number="batch" :disabled="busy" /></label>
-        <label>
-          用途
+      <section class="card">
+        <div class="editor-head">
+          <span>流程</span>
+          <span class="muted mono" v-if="epochInfo.stage">
+            {{ epochInfo.stage === 'sovits' ? 'SoVITS' : 'GPT' }} {{ epochInfo.epoch }} / {{ epochInfo.total }}
+          </span>
+        </div>
+        <div class="steps">
+          <div v-for="(s, i) in steps" :key="s.key" class="step" :class="s.status">
+            <span class="idx mono">{{ String(i + 1).padStart(2, '0') }}</span>
+            <span class="label">{{ s.label }}</span>
+            <span class="detail muted">{{ s.detail }}</span>
+            <span class="state">{{ statusText(s.status) }}</span>
+          </div>
+        </div>
+
+        <div v-if="phase === 'done'" class="done train-done">
+          训练完成：{{ summary ? summary.slices + ' 段 / ' + summary.seconds + ' 秒素材' : expName }}。
+          去「单句合成」页左侧点一下音色，就能选到 <b>{{ expName }}</b> 试听。
+        </div>
+        <pre v-if="showLog" class="log mono">{{ log.join('\n') }}</pre>
+      </section>
+    </div>
+
+    <aside class="split-side">
+      <section class="inspector">
+        <div class="inspector-head">训练参数</div>
+
+        <div class="field">
+          <div class="field-label"><span>实验名</span></div>
+          <input v-model="expName" type="text" class="mono" :disabled="busy" />
+        </div>
+
+        <div class="field">
+          <div class="field-label"><span>用途</span></div>
           <select v-model="voiceRole" :disabled="busy">
             <option value="read">朗读（念文章、有声书）</option>
             <option value="sing">唱歌（翻唱用）</option>
           </select>
-        </label>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="editor-head">
-        <span>流程</span>
-        <span class="muted mono" v-if="epochInfo.stage">
-          {{ epochInfo.stage === 'sovits' ? 'SoVITS' : 'GPT' }} {{ epochInfo.epoch }} / {{ epochInfo.total }}
-        </span>
-      </div>
-      <div class="steps">
-        <div v-for="(s, i) in steps" :key="s.key" class="step" :class="s.status">
-          <span class="idx mono">{{ String(i + 1).padStart(2, '0') }}</span>
-          <span class="label">{{ s.label }}</span>
-          <span class="detail muted">{{ s.detail }}</span>
-          <span class="state">{{ statusText(s.status) }}</span>
         </div>
-      </div>
 
-      <div class="actions">
-        <button class="primary" :disabled="!canPrepare" @click="prepare">
-          {{ phase === 'preparing' ? '处理中…' : '开始处理（切片 + 打标 + 特征）' }}
-        </button>
-        <button :disabled="!canTrain || busy" @click="startTrain">
-          {{ phase === 'training' ? '训练中…' : '开始训练' }}
-        </button>
-        <button class="ghost" :disabled="!busy" @click="cancel">取消</button>
-        <button class="ghost" @click="showLog = !showLog">{{ showLog ? '收起日志' : '日志' }}</button>
-      </div>
+        <div class="inspector-sep"></div>
 
-      <div v-if="error" class="alert">{{ error }}</div>
-      <div v-if="phase === 'done'" class="done train-done">
-        训练完成：{{ summary ? summary.slices + ' 段 / ' + summary.seconds + ' 秒素材' : expName }}。
-        去「单句」页左上角点一下音色，就能选到 <b>{{ expName }}</b> 试听。
-      </div>
-      <pre v-if="showLog" class="log mono">{{ log.join('\n') }}</pre>
-    </section>
+        <div class="field">
+          <div class="field-label"><span>SoVITS 轮数</span><b class="mono">{{ s2Epochs }}</b></div>
+          <input type="range" min="4" max="30" step="1" v-model.number="s2Epochs" :disabled="busy" />
+        </div>
+
+        <div class="field">
+          <div class="field-label"><span>GPT 轮数</span><b class="mono">{{ s1Epochs }}</b></div>
+          <input type="range" min="5" max="60" step="1" v-model.number="s1Epochs" :disabled="busy" />
+        </div>
+
+        <div class="field">
+          <div class="field-label"><span>batch</span><b class="mono">{{ batch }}</b></div>
+          <input type="range" min="1" max="8" step="1" v-model.number="batch" :disabled="busy" />
+          <span class="muted" style="font-size:11px">6GB 显存建议 1~2</span>
+        </div>
+
+        <div class="inspector-actions">
+          <button class="primary" :disabled="!canPrepare" @click="prepare">
+            {{ phase === 'preparing' ? '处理中…' : '开始处理' }}
+          </button>
+          <button :disabled="!canTrain || busy" @click="startTrain">
+            {{ phase === 'training' ? '训练中…' : '开始训练' }}
+          </button>
+          <button class="mini" :disabled="!busy" @click="cancel">取消</button>
+          <button class="mini" @click="showLog = !showLog">{{ showLog ? '收起日志' : '查看日志' }}</button>
+        </div>
+
+        <div v-if="error" class="alert" style="margin-top:12px">{{ error }}</div>
+      </section>
+    </aside>
   </div>
 </template>
 
 <style scoped>
-.train { display: flex; flex-direction: column; gap: 14px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
 .editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 24px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--line-soft); font-size: 11px; letter-spacing: .06em; color: var(--muted); }
 .pick-row { display: flex; align-items: center; gap: 12px; }
