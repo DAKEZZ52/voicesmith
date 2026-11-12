@@ -125,105 +125,107 @@ async function analyze() {
 </script>
 
 <template>
-  <div class="profile">
-    <section class="card">
-      <div class="editor-head">
-        <span>测音域 <em class="muted">（给一段清唱或人声干声，5 秒以上）</em></span>
-      </div>
+  <div class="profile split">
+    <div class="split-main">
+      <section v-if="profile" class="card">
+        <div class="editor-head">
+          <span>结果</span>
+          <span class="muted">{{ profile.voiceType }} · {{ profile.gender }}声 · {{ profile.bright }}{{ profile.airy ? '、气声偏多' : '' }}</span>
+        </div>
 
-      <div class="row">
-        <button class="mini" @click="pick">选择音频</button>
-        <span class="name mono">{{ fileName || '没选文件' }}</span>
-      </div>
+        <div class="range">
+          <div class="range-track">
+            <div class="range-span" :style="{ left: rangeLeft + '%', width: rangeWidth + '%' }"></div>
+            <div class="range-comfort" :style="{ left: comfortLeft + '%', width: comfortWidth + '%' }"></div>
+          </div>
+          <div class="range-labels">
+            <span class="mono">{{ profile.noteLow }}</span>
+            <span class="muted">舒适区 {{ profile.noteComfortLow }}–{{ profile.noteComfortHigh }}</span>
+            <span class="mono">{{ profile.noteHigh }}</span>
+          </div>
+        </div>
 
-      <div class="row" v-if="refs.length">
-        <select v-model="useRef" style="max-width: 260px">
-          <option value="">用已有参考音频…</option>
-          <option v-for="r in refs" :key="r.path" :value="r.path">{{ r.name }}</option>
-        </select>
-        <button class="mini" :disabled="!useRef" @click="useRefAudio">使用</button>
-      </div>
+        <div class="stats">
+          <div><span>音域跨度</span><b class="mono">{{ profile.spanSemitones }} 半音</b></div>
+          <div><span>中位音高</span><b class="mono">{{ midiToNote(profile.median) }}</b></div>
+          <div><span>发声占比</span><b class="mono">{{ profile.voiced }}%</b></div>
+          <div><span>音色亮度</span><b class="mono">{{ profile.centroid }} Hz</b></div>
+          <div><span>谐波/噪声</span><b class="mono">{{ profile.harmonicRatio }}</b></div>
+          <div><span>动态范围</span><b class="mono">{{ profile.dynamic }}×</b></div>
+        </div>
+      </section>
 
-      <label class="check">
-        <input type="checkbox" v-model="separate" />
-        选的歌带伴奏，先分离人声（多花 1~3 分钟）
-      </label>
+      <section v-if="profile" class="card">
+        <div class="editor-head">
+          <span>适合唱的歌</span>
+          <span class="muted">按你的舒适区算，变调以半音为单位</span>
+        </div>
+        <div class="songs">
+          <div v-for="s in recommendations" :key="s.name + s.artist" class="song" :class="{ tight: !s.fits }">
+            <span class="song-name">{{ s.name }}</span>
+            <span class="song-artist">{{ s.artist }}</span>
+            <span class="song-range mono">{{ s.range }}</span>
+            <span class="song-shift mono">{{ s.label }}</span>
+            <span class="song-verdict" :class="'t' + s.tier">{{ s.verdict }}</span>
+            <button class="mini song-go" :disabled="!s.fits" @click="goCover(s.shift)">去翻唱</button>
+          </div>
+        </div>
+      </section>
 
-      <div class="actions">
-        <button class="primary" :disabled="busy || !file" @click="analyze">
-          {{ busy ? '分析中…' : '开始分析' }}
-        </button>
-      </div>
+      <section v-if="!profile" class="card">
+        <div class="editor-head"><span>怎么测才准</span></div>
+        <ul class="tips">
+          <li>最好给清唱：同一人、无伴奏、唱 30 秒以上，尽量包含你的最低音和最高音</li>
+          <li>给带伴奏的歌也行，勾上「先分离人声」，但会多花 1~3 分钟</li>
+          <li>朗读录音也能测，但音域会明显偏窄，不适合拿来选歌</li>
+          <li>分析只读文件、不修改任何东西；结果里的「舒适区」是第 20~80 百分位音高</li>
+        </ul>
+      </section>
 
       <div v-if="error" class="alert">{{ error }}</div>
       <div v-if="looksMixed" class="notice">
         这段音频里伴奏或噪声偏多（发声占比 {{ profile ? profile.voiced : 0 }}%），测出来的音域可能偏低。
         建议勾选「先分离人声」再测一次，或者直接给清唱。
       </div>
-    </section>
+    </div>
 
-    <section v-if="profile" class="card">
-      <div class="editor-head">
-        <span>
-          结果 <em class="muted">{{ profile.voiceType }} · {{ profile.gender }}声 · {{ profile.bright }}{{ profile.airy ? '、气声偏多' : '' }}</em>
-        </span>
-      </div>
+    <aside class="split-side">
+      <section class="inspector">
+        <div class="inspector-head">测音域</div>
 
-      <div class="range">
-        <div class="range-track">
-          <div class="range-span" :style="{ left: rangeLeft + '%', width: rangeWidth + '%' }"></div>
-          <div class="range-comfort" :style="{ left: comfortLeft + '%', width: comfortWidth + '%' }"></div>
+        <div class="field">
+          <div class="field-label"><span>音频</span></div>
+          <button @click="pick">选择音频</button>
+          <span class="muted mono file-name" :title="fileName">{{ fileName || '没选文件（5 秒以上）' }}</span>
         </div>
-        <div class="range-labels">
-          <span class="mono">{{ profile.noteLow }}</span>
-          <span class="muted">舒适区 {{ profile.noteComfortLow }}–{{ profile.noteComfortHigh }}</span>
-          <span class="mono">{{ profile.noteHigh }}</span>
+
+        <div class="field" v-if="refs.length">
+          <div class="field-label"><span>或者用已有参考</span></div>
+          <select v-model="useRef">
+            <option value="">选一段参考音频…</option>
+            <option v-for="r in refs" :key="r.path" :value="r.path">{{ r.name }}</option>
+          </select>
+          <button class="mini" :disabled="!useRef" @click="useRefAudio">用这段</button>
         </div>
-      </div>
 
-      <div class="stats">
-        <div><span>音域跨度</span><b class="mono">{{ profile.spanSemitones }} 半音</b></div>
-        <div><span>中位音高</span><b class="mono">{{ midiToNote(profile.median) }}</b></div>
-        <div><span>发声占比</span><b class="mono">{{ profile.voiced }}%</b></div>
-        <div><span>音色亮度</span><b class="mono">{{ profile.centroid }} Hz</b></div>
-        <div><span>谐波/噪声</span><b class="mono">{{ profile.harmonicRatio }}</b></div>
-        <div><span>动态范围</span><b class="mono">{{ profile.dynamic }}×</b></div>
-      </div>
-    </section>
-
-    <section v-if="profile" class="card">
-      <div class="editor-head">
-        <span>适合唱的歌 <em class="muted">按你的舒适区算，变调以半音为单位</em></span>
-      </div>
-      <div class="songs">
-        <div v-for="s in recommendations" :key="s.name + s.artist" class="song" :class="{ tight: !s.fits }">
-          <span class="song-name">{{ s.name }}</span>
-          <span class="song-artist">{{ s.artist }}</span>
-          <span class="song-range mono">{{ s.range }}</span>
-          <span class="song-shift mono">{{ s.label }}</span>
-          <span class="song-verdict" :class="'t' + s.tier">{{ s.verdict }}</span>
-          <button class="mini song-go" :disabled="!s.fits" @click="goCover(s.shift)">去翻唱</button>
+        <div class="field">
+          <label class="check-line"><input type="checkbox" v-model="separate" /> 先分离人声 / 伴奏</label>
+          <span class="muted" style="font-size:11px">带伴奏的歌勾上，多花 1~3 分钟</span>
         </div>
-      </div>
-    </section>
 
-    <section v-if="!profile" class="card">
-      <div class="editor-head"><span>怎么测才准</span></div>
-      <ul class="tips">
-        <li>最好给清唱：同一人、无伴奏、唱 30 秒以上，尽量包含你的最低音和最高音</li>
-        <li>给带伴奏的歌也行，勾上「先分离人声」，但会多花 1~3 分钟</li>
-        <li>朗读录音也能测，但音域会明显偏窄，不适合拿来选歌</li>
-        <li>分析只读文件、不修改任何东西；结果里的「舒适区」是第 20~80 百分位音高</li>
-      </ul>
-    </section>
+        <div class="inspector-actions">
+          <button class="primary" :disabled="busy || !file" @click="analyze">
+            {{ busy ? '分析中…' : '开始分析' }}
+          </button>
+        </div>
+      </section>
+    </aside>
   </div>
 </template>
 
 <style scoped>
-.profile { display: flex; flex-direction: column; gap: 14px; }
-.row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.name { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.check { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin: 4px 0 10px; }
+.check-line { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); }
+.file-name { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .actions { margin-top: 6px; }
 
 .range { margin: 6px 0 14px; }

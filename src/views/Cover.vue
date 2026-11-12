@@ -21,6 +21,39 @@ watch(() => props.pitchHint, (v) => {
   const label = pitch.value > 0 ? '升 ' + pitch.value : (pitch.value < 0 ? '降 ' + (-pitch.value) : '原调');
   hintText.value = '已按测声结果设为 ' + label + '（' + pitch.value + ' 个半音）';
 }, { immediate: true });
+const isEpochFile = (name) => /_e\d+_s\d+\.pth$/i.test(name || '');
+const baseName = (name) => String(name || '').replace(/_e\d+_s\d+\.pth$/i, '').replace(/\.pth$/i, '');
+// 每个音色只把最新的一版算「最新模型」，其余都归到历史检查点
+const modelSplit = computed(() => {
+  const list = (info.value.models || []).slice().sort((a, b) => b.mtime - a.mtime);
+  const seen = new Set();
+  const latest = [];
+  const history = [];
+  for (const m of list) {
+    const key = baseName(m.name);
+    if (seen.has(key)) history.push(m);
+    else { seen.add(key); latest.push(m); }
+  }
+  return { latest, history };
+});
+const finalModels = computed(() => modelSplit.value.latest);
+const historyModels = computed(() => modelSplit.value.history);
+const modelHint = computed(() => {
+  const cur = (info.value.models || []).find((m) => m.path === model.value);
+  if (!cur) return '';
+  const m = /_e(\d+)_s(\d+)/i.exec(cur.name || '');
+  return m ? '第 ' + m[1] + ' 轮的训练快照' : '训练完成导出的正式模型';
+});
+
+async function prune() {
+  const n = historyModels.value.length;
+  if (!n) return;
+  if (!window.confirm('会删除 ' + (n - 1) + ' 个旧检查点，每个音色只留最新一个（正式模型不动）。继续？')) return;
+  const r = await window.api.rvcPrune();
+  if (!r.ok) { error.value = r.error; return; }
+  await refresh();
+}
+
 const separate = ref(true);
 const running = ref(false);
 const stage = ref('');
@@ -220,8 +253,15 @@ function openRvc() { if (info.value.root) window.api.openDir({ path: info.value.
         <div class="field">
           <div class="field-label"><span>音色模型</span></div>
           <select v-model="model">
-            <option v-for="m in info.models" :key="m.path" :value="m.path">{{ m.name }} · {{ m.sizeMB }}MB</option>
+            <optgroup label="最新模型">
+              <option v-for="m in finalModels" :key="m.path" :value="m.path">{{ m.name }} · {{ m.sizeMB }}MB</option>
+            </optgroup>
+            <optgroup label="训练检查点（同一个人，轮数不同）" v-if="historyModels.length">
+              <option v-for="m in historyModels" :key="m.path" :value="m.path">{{ m.name }}</option>
+            </optgroup>
           </select>
+          <button class="mini prune" v-if="historyModels.length" @click="prune">清理旧检查点</button>
+          <span class="muted" style="font-size:11px">{{ modelHint }}</span>
         </div>
 
         <div class="field">
@@ -262,6 +302,7 @@ function openRvc() { if (info.value.root) window.api.openDir({ path: info.value.
 </template>
 
 <style scoped>
+.prune { align-self: flex-start; margin-top: 2px; }
 .pick { display: flex; align-items: center; gap: 12px; margin: 4px 0 6px; }
 .pick .ellipsis { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .path-row { margin-top: 10px; }

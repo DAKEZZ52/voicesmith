@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('api', {
   pickAudio: () => ipcRenderer.invoke('pick-audio'),
   profileAnalyze: (payload) => ipcRenderer.invoke('profile:analyze', payload),
   rvcInfo: () => ipcRenderer.invoke('rvc:info'),
+  rvcPrune: () => ipcRenderer.invoke('rvc:prune'),
   rvcConvert: (payload) => ipcRenderer.invoke('rvc:convert', payload),
   rvcCancel: () => ipcRenderer.invoke('rvc:cancel'),
   bookDetail: (payload) => ipcRenderer.invoke('book:detail', payload),

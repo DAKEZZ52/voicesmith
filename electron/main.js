@@ -2302,6 +2302,41 @@ function rvcRoot() {
   return '';
 }
 
+ipcMain.handle('rvc:prune', () => {
+  try {
+    const root = rvcRoot();
+    if (!root) return { ok: false, error: '没有找到 RVC 安装' };
+    const wdir = path.join(root, 'assets', 'weights');
+    if (!fs.existsSync(wdir)) return { ok: false, error: '没有 weights 目录' };
+    const epochRe = /_e\d+_s\d+\.pth$/i;
+    const groups = new Map();
+    for (const f of fs.readdirSync(wdir)) {
+      if (!f.endsWith('.pth')) continue;
+      const st = fs.statSync(path.join(wdir, f));
+      const base = f.replace(epochRe, '');
+      const isEpoch = epochRe.test(f);
+      if (!groups.has(base)) groups.set(base, []);
+      groups.get(base).push({ f, mtime: st.mtimeMs, size: st.size, isEpoch });
+    }
+    let deleted = 0;
+    let freed = 0;
+    for (const [base, list] of groups) {
+      const epoch = list.filter((x) => x.isEpoch).sort((a, b) => b.mtime - a.mtime);
+      // 每个音色只留最新的一个检查点，其余删除（正式模型不动）
+      for (const item of epoch.slice(1)) {
+        try {
+          fs.unlinkSync(path.join(wdir, item.f));
+          deleted += 1;
+          freed += item.size;
+        } catch (_) {}
+      }
+    }
+    return { ok: true, deleted, freedMB: +(freed / 1048576).toFixed(1) };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+});
+
 ipcMain.handle('rvc:info', () => {
   const root = rvcRoot();
   if (!root) return { ok: false, error: '没有找到 RVC 安装（需要包含 .venv 的目录）' };
