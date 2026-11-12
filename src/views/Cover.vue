@@ -15,6 +15,8 @@ const indexRate = ref(0.75);
 const pitch = ref(0);
 const hintText = ref('');
 
+watch(model, (v) => syncIndex(v));
+
 watch(() => props.pitchHint, (v) => {
   if (v === null || v === undefined) return;
   pitch.value = Number(v) || 0;
@@ -44,6 +46,12 @@ const modelHint = computed(() => {
   const m = /_e(\d+)_s(\d+)/i.exec(cur.name || '');
   return m ? '第 ' + m[1] + ' 轮的训练快照' : '训练完成导出的正式模型';
 });
+
+function syncIndex(modelPath) {
+  const base = baseName(String(modelPath || '').split(/[\\/]/).pop());
+  const hit = (info.value.indices || []).find((x) => x.name.toLowerCase().startsWith(base.toLowerCase()));
+  if (hit) index.value = hit.path;
+}
 
 async function prune() {
   const n = historyModels.value.length;
