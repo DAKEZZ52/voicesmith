@@ -768,13 +768,16 @@ function replay(item) {
           </div>
 
           <aside class="synth-side">
-            <section class="card params">
-              <div class="param">
-                <label>语速 <b class="mono">{{ params.speed.toFixed(2) }}</b></label>
+            <section class="inspector">
+              <div class="inspector-head">生成参数</div>
+
+              <div class="field">
+                <div class="field-label"><span>语速</span><b class="mono">{{ params.speed.toFixed(2) }}</b></div>
                 <input type="range" min="0.6" max="1.65" step="0.05" v-model.number="params.speed" />
               </div>
-              <div class="param">
-                <label>采样步数 <b class="mono">{{ params.steps }}</b></label>
+
+              <div class="field">
+                <div class="field-label"><span>采样步数</span><b class="mono">{{ params.steps }}</b></div>
                 <select v-model.number="params.steps">
                   <option :value="4">4（最快）</option>
                   <option :value="8">8（推荐）</option>
@@ -782,43 +785,54 @@ function replay(item) {
                   <option :value="32">32（最慢）</option>
                 </select>
               </div>
-              <div class="param">
-                <label>top_k <b class="mono">{{ params.topK }}</b></label>
+
+              <div class="inspector-sep"></div>
+
+              <div class="field">
+                <div class="field-label"><span>top_k</span><b class="mono">{{ params.topK }}</b></div>
                 <input type="range" min="1" max="100" step="1" v-model.number="params.topK" />
               </div>
-              <div class="param">
-                <label>top_p <b class="mono">{{ params.topP.toFixed(2) }}</b></label>
+
+              <div class="field">
+                <div class="field-label"><span>top_p</span><b class="mono">{{ params.topP.toFixed(2) }}</b></div>
                 <input type="range" min="0" max="1" step="0.05" v-model.number="params.topP" />
               </div>
-              <div class="param">
-                <label>temperature <b class="mono">{{ params.temperature.toFixed(2) }}</b></label>
+
+              <div class="field">
+                <div class="field-label"><span>temperature</span><b class="mono">{{ params.temperature.toFixed(2) }}</b></div>
                 <input type="range" min="0" max="1" step="0.05" v-model.number="params.temperature" />
               </div>
-              <div class="param">
-                <label>切分方式</label>
+
+              <div class="inspector-sep"></div>
+
+              <div class="field">
+                <div class="field-label"><span>切分方式</span></div>
                 <select v-model="params.split">
                   <option v-for="o in splitOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
                 </select>
               </div>
+
+              <div class="inspector-sep"></div>
+
+              <div class="run-box">
+                <template v-if="mode === 'single'">
+                  <button class="primary wide" :disabled="!canRun" @click="synthesize">
+                    {{ running ? '合成中…' : '合成语音' }}
+                  </button>
+                  <span class="kbd-hint">Ctrl + Enter</span>
+                </template>
+                <template v-else>
+                  <button class="primary wide" :disabled="!queue.length || !currentRef || batchRunning" @click="runBatch(false)">
+                    {{ batchRunning ? `合成中 ${batchDoneCount}/${batchTotal}` : '开始批量合成' }}
+                  </button>
+                  <button class="wide" :disabled="batchRunning" @click="buildQueue">重建队列</button>
+                  <button v-if="batchRunning" class="wide" :disabled="batchCanceling" @click="cancelBatch">取消</button>
+                  <button v-else class="wide" :disabled="!queue.length" @click="runBatch(true)">只重试未完成</button>
+                  <button class="wide" :disabled="!batchDir" @click="exportBatch">导出 zip</button>
+                </template>
+              </div>
             </section>
 
-            <div class="run-box">
-              <template v-if="mode === 'single'">
-                <button class="primary wide" :disabled="!canRun" @click="synthesize">
-                  {{ running ? '合成中…' : '合成语音' }}
-                </button>
-                <span class="kbd-hint">Ctrl + Enter</span>
-              </template>
-              <template v-else>
-                <button class="primary wide" :disabled="!queue.length || !currentRef || batchRunning" @click="runBatch(false)">
-                  {{ batchRunning ? `合成中 ${batchDoneCount}/${batchTotal}` : '开始批量合成' }}
-                </button>
-                <button class="wide" :disabled="batchRunning" @click="buildQueue">重建队列</button>
-                <button v-if="batchRunning" class="wide" :disabled="batchCanceling" @click="cancelBatch">取消</button>
-                <button v-else class="wide" :disabled="!queue.length" @click="runBatch(true)">只重试未完成</button>
-                <button class="wide" :disabled="!batchDir" @click="exportBatch">导出 zip</button>
-              </template>
-            </div>
           </aside>
         </div>
       </div>
@@ -999,8 +1013,9 @@ function replay(item) {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0 28px 26px;
+  padding: 0 28px 28px;
 }
+.page-body > * { max-width: 1120px; }
 
 .synth {
   display: flex;
@@ -1009,8 +1024,8 @@ function replay(item) {
 }
 .synth-main { flex: 1; min-width: 0; }
 .synth-side {
-  width: 268px;
-  flex: 0 0 268px;
+  width: 296px;
+  flex: 0 0 296px;
   position: sticky;
   top: 0;
 }
@@ -1038,18 +1053,52 @@ function replay(item) {
 .preview-audio { width: 100%; height: 34px; margin-top: 8px; }
 audio { width: 100%; height: 34px; }
 
-.params { display: flex; flex-direction: column; gap: 13px; }
-.param { display: flex; flex-direction: column; gap: 6px; }
-.param label {
+.inspector {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 18px 18px;
+  box-shadow: var(--shadow-sm);
+}
+.inspector-head {
+  font-size: 12px;
+  font-weight: 620;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.inspector-sep {
+  height: 1px;
+  background: var(--line-soft);
+  margin: 14px 0;
+}
+.field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
+.field:last-child { margin-bottom: 0; }
+.field-label {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  font-size: 11.5px;
+  gap: 8px;
+  font-size: 12px;
   color: var(--muted);
 }
-.param label b { color: var(--text); font-weight: 560; }
+.field-label b {
+  color: var(--text);
+  font-weight: 560;
+  font-size: 12px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: var(--panel-2);
+}
 
-.run-box { display: flex; flex-direction: column; gap: 8px; }
+.run-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
 .run-box button.wide { width: 100%; height: 38px; font-size: 13.5px; }
 .kbd-hint { text-align: center; font-size: 11px; color: var(--muted-2); }
 
