@@ -1,6 +1,6 @@
 {
   "name": "weavevoice",
-  "version": "2.0.12",
+  "version": "2.0.14",
   "description": "织声 WeaveVoice —— 本地 AI 语音合成与音色微调桌面端",
   "author": {
     "name": "DAKEZZ52",
@@ -17,7 +17,8 @@
   },
   "dependencies": {
     "electron-updater": "^6.8.11",
-    "vue": "^3.5.45"
+    "vue": "^3.5.45",
+    "js-yaml": "^4.1.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.4",

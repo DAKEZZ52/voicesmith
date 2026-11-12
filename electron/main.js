@@ -307,6 +307,22 @@ function startApi() {
   });
   if (rt.useBase) env.PYTHONPATH = rt.site;
   log('启动 TTS 服务…');
+  // 训练出来的是 fp32 权重，半精度推理会给出全零波形：
+  // 启动前把 custom 段的 is_half 固定为 false（幂等，失败不影响启动）
+  try {
+    const yaml = require('js-yaml');
+    const cfgPath = path.join(root, 'GPT_SoVITS', 'configs', 'tts_infer.yaml');
+    if (fs.existsSync(cfgPath)) {
+      const doc = yaml.load(fs.readFileSync(cfgPath, 'utf8')) || {};
+      if (doc.custom && doc.custom.is_half !== false) {
+        doc.custom.is_half = false;
+        fs.writeFileSync(cfgPath, yaml.dump(doc, { lineWidth: 120 }), 'utf8');
+        log('已把推理精度设为 fp32（避免半精度出静音）');
+      }
+    }
+  } catch (err) {
+    log('精度配置修正跳过：' + String(err.message || err));
+  }
   apiProc = spawn(py, ['-s', 'api_v2.py', '-c', 'GPT_SoVITS/configs/tts_infer.yaml', '-p', String(apiPort)],
     { cwd: root, env, windowsHide: true });
   apiProc.stdout.setEncoding('utf8');
@@ -372,6 +388,41 @@ async function runSelfTest() {
     } catch (_) {}
   };
 
+  if (process.env.GSO_TRAIN_RUN === '1') {
+    try {
+      const dir = String(process.env.GSO_TRAIN_DIR || '');
+      const exp = String(process.env.GSO_TRAIN_EXP || 'langdu');
+      const s2 = Number(process.env.GSO_TRAIN_S2 || 8);
+      const s1 = Number(process.env.GSO_TRAIN_S1 || 30);
+      const batch = Number(process.env.GSO_TRAIN_BATCH || 2);
+      const role = String(process.env.GSO_TRAIN_ROLE || 'read');
+      if (process.env.GSO_TRAIN_SKIP_PREP !== '1') {
+        const inspect = await mainWindow.webContents.executeJavaScript(
+          'window.api.trainInspect({ dir: ' + JSON.stringify(dir) + ' })'
+        );
+        log('TRAIN_RUN inspect=' + JSON.stringify(inspect));
+        const prep = await mainWindow.webContents.executeJavaScript(
+          'window.api.trainPrepare({ inputDir: ' + JSON.stringify(dir) + ', expName: ' + JSON.stringify(exp) + ' })'
+        );
+        log('TRAIN_RUN prepare=' + JSON.stringify(prep).slice(0, 300));
+        if (!prep || !prep.ok) { setTimeout(() => app.exit(1), 500); return; }
+      } else {
+        log('TRAIN_RUN skip prepare');
+      }
+      const fit = await mainWindow.webContents.executeJavaScript(
+        'window.api.trainStart({ expName: ' + JSON.stringify(exp) + ', s2Epochs: ' + s2 + ', s1Epochs: ' + s1 + ', batch: ' + batch + ' })'
+      );
+      log('TRAIN_RUN start=' + JSON.stringify(fit).slice(0, 300));
+      await mainWindow.webContents.executeJavaScript(
+        'window.api.setVoiceRole({ name: ' + JSON.stringify(exp.toLowerCase()) + ', role: ' + JSON.stringify(role) + ' })'
+      );
+      log('TRAIN_RUN done ok=' + !!(fit && fit.ok));
+    } catch (err) {
+      log('TRAIN_RUN fail ' + err);
+    }
+    setTimeout(() => app.exit(0), 800);
+    return;
+  }
   if (process.env.GSO_QA === '1') {
     const errors = [];
     mainWindow.webContents.on('console-message', (_e, level, message) => {
@@ -2034,11 +2085,13 @@ ipcMain.handle('train:start', async (_e, opts) => {
   }
 
   // SoVITS
+  const safeMode = process.env.GSO_TRAIN_SAFE === '1';
   const s2CfgPath = path.join(root, 'GPT_SoVITS', 'configs', 's2v2Pro.json');
   const s2 = JSON.parse(fs.readFileSync(s2CfgPath, 'utf8'));
   Object.assign(s2.train, {
-    batch_size: batch,
+    batch_size: safeMode ? 1 : batch,
     epochs: s2Epochs,
+    eval_interval: safeMode ? 1000000 : 500,
     text_low_lr_rate: 0.4,
     pretrained_s2G: 'GPT_SoVITS/pretrained_models/v2Pro/s2Gv2Pro.pth',
     pretrained_s2D: 'GPT_SoVITS/pretrained_models/v2Pro/s2Dv2Pro.pth',
@@ -2050,6 +2103,7 @@ ipcMain.handle('train:start', async (_e, opts) => {
     lora_rank: 32
   });
   s2.model.version = 'v2Pro';
+  if (safeMode) { s2.train.fp16_run = false; if (s2.train.half) s2.train.half = false; }
   s2.data.exp_dir = s2.s2_ckpt_dir = optDir;
   s2.save_weight_dir = 'SoVITS_weights_v2Pro';
   s2.name = expName;
@@ -2089,7 +2143,7 @@ ipcMain.handle('train:start', async (_e, opts) => {
     '  epochs: ' + s1Epochs,
     '  batch_size: ' + batch,
     '  save_every_n_epoch: ' + Math.max(1, Math.floor(s1Epochs / 3)),
-    '  precision: 16-mixed',
+    '  precision: ' + (process.env.GSO_TRAIN_SAFE === '1' ? '32' : '16-mixed'),
     '  gradient_clip: 1.0',
     '  if_save_every_weights: true',
     '  if_save_latest: true',
