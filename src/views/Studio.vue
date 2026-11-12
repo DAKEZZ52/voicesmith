@@ -117,8 +117,8 @@ let dragAnchor = null;
 let dragging = false;
 
 const params = ref({
-  speed: 1.0,
-  steps: 8,
+  speed: 0.9,
+  steps: 16,
   topK: 15,
   topP: 1.0,
   temperature: 1.0,

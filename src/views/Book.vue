@@ -20,7 +20,7 @@ const history = ref([]);
 const detail = ref(null);
 const redeeming = ref(-1);
 const gapSec = ref(0.6);
-const speed = ref(1);
+const speed = ref(0.9);
 const maxChars = ref(3000);
 let offs = [];
 
