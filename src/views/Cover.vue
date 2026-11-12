@@ -53,6 +53,24 @@ function syncIndex(modelPath) {
   if (hit) index.value = hit.path;
 }
 
+async function removeModel() {
+  const cur = (info.value.models || []).find((m) => m.path === model.value);
+  if (!cur) return;
+  const idx = (info.value.indices || []).filter((x) => x.name.toLowerCase().startsWith(baseName(cur.name).toLowerCase()));
+  const lines = [
+    '模型：' + cur.name,
+    '将删除：',
+    '· 权重文件 1 个（' + cur.sizeMB + ' MB）',
+    idx.length ? '· 检索索引 ' + idx.length + ' 个（共 ' + idx.reduce((n, x) => n + (x.sizeMB || 0), 0).toFixed(0) + ' MB）' : '· 没有关联索引',
+    '',
+    '删掉后这个唱歌音色就没了，需要重新训练。确定？'
+  ];
+  if (!window.confirm(lines.join('\n'))) return;
+  const r = await window.api.rvcDelete({ path: cur.path });
+  if (!r.ok) { error.value = r.error; return; }
+  await refresh();
+}
+
 async function prune() {
   const n = historyModels.value.length;
   if (!n) return;
@@ -268,7 +286,10 @@ function openRvc() { if (info.value.root) window.api.openDir({ path: info.value.
               <option v-for="m in historyModels" :key="m.path" :value="m.path">{{ m.name }}</option>
             </optgroup>
           </select>
-          <button class="mini prune" v-if="historyModels.length" @click="prune">清理旧检查点</button>
+          <div class="model-actions">
+            <button class="mini prune" v-if="historyModels.length" @click="prune">清理旧检查点</button>
+            <button class="mini danger" :disabled="!model" @click="removeModel">删除此模型</button>
+          </div>
           <span class="muted" style="font-size:11px">{{ modelHint }}</span>
         </div>
 
@@ -310,7 +331,8 @@ function openRvc() { if (info.value.root) window.api.openDir({ path: info.value.
 </template>
 
 <style scoped>
-.prune { align-self: flex-start; margin-top: 2px; }
+.model-actions { display: flex; gap: 6px; margin-top: 2px; }
+.model-actions .mini { margin: 0; }
 .pick { display: flex; align-items: center; gap: 12px; margin: 4px 0 6px; }
 .pick .ellipsis { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .path-row { margin-top: 10px; }

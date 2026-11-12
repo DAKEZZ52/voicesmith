@@ -388,6 +388,20 @@ async function runSelfTest() {
     } catch (_) {}
   };
 
+  if (process.env.GSO_RVC_DELETE) {
+    try {
+      for (let i = 0; i < 60 && phase !== 'ready'; i += 1) await new Promise((r) => setTimeout(r, 1000));
+      const target = String(process.env.GSO_RVC_DELETE);
+      const del = await mainWindow.webContents.executeJavaScript(
+        'window.api.rvcDelete({ path: ' + JSON.stringify(target) + ' })'
+      );
+      log('RVC_DELETE ' + JSON.stringify(del));
+    } catch (err) {
+      log('RVC_DELETE fail ' + err);
+    }
+    setTimeout(() => app.exit(0), 800);
+    return;
+  }
   if (process.env.GSO_TRAIN_RUN === '1') {
     try {
       const dir = String(process.env.GSO_TRAIN_DIR || '');
@@ -1540,7 +1554,7 @@ ipcMain.handle('tts', async (_e, opts) => {
     };
     // 模型对个别句子会吐静音：换 seed → 保守参数 → 按逗号拆句
     const robust = await synthRobust(body, opts.text);
-    const buf = robust.buf;
+    const buf = autoGain(robust.buf);
     if (!buf) throw new Error('这段反复合成都没声音，换个说法或再点一次');
     const outDir = path.join(payloadRoot(), 'output');
     fs.mkdirSync(outDir, { recursive: true });
@@ -1780,6 +1794,27 @@ function wavDuration(buf) {
   return Math.max(0, (buf.length - 44)) / (32000 * 2);
 }
 
+// 有些训练轮次的模型输出电平过低：峰值低于 0.08 时拉到 0.85，避免听不见
+function autoGain(buf) {
+  try {
+    if (!buf || buf.length < 1000) return buf;
+    let peak = 0;
+    for (let i = 44; i + 1 < buf.length; i += 2) {
+      const v = Math.abs(buf.readInt16LE(i));
+      if (v > peak) peak = v;
+    }
+    if (peak === 0 || peak >= 0.08 * 32768) return buf;
+    const k = (0.85 * 32768) / peak;
+    const out = Buffer.from(buf);
+    for (let i = 44; i + 1 < out.length; i += 2) {
+      const v = Math.round(out.readInt16LE(i) * k);
+      out.writeInt16LE(Math.max(-32768, Math.min(32767, v)), i);
+    }
+    return out;
+  } catch (_) {
+    return buf;
+  }
+}
 function wavRms(buf) {
   if (buf.length < 1000) return 0;
   let sum = 0;
@@ -1947,7 +1982,7 @@ ipcMain.handle('batch-run', async (_e, opts) => {
       use_flash_attention: false
     };
     const robust = await synthRobust(baseBody, item.text);
-    const buf = robust.buf;
+    const buf = autoGain(robust.buf);
     if (buf) {
       const label = String(item.text || '')
         .replace(/[\s\u3000]+/g, '')
@@ -2435,6 +2470,42 @@ function rvcRoot() {
   }
   return '';
 }
+
+ipcMain.handle('rvc:delete', (_e, { path: weightPath }) => {
+  try {
+    const rroot = rvcRoot();
+    if (!rroot) return { ok: false, error: '没有找到 RVC 安装' };
+    const wdir = path.join(rroot, 'assets', 'weights');
+    const idir = path.join(rroot, 'assets', 'indices');
+    const full = path.resolve(String(weightPath || ''));
+    if (!full.toLowerCase().startsWith(path.resolve(wdir).toLowerCase())) {
+      return { ok: false, error: '只能删除 assets/weights 里的模型' };
+    }
+    if (!fs.existsSync(full)) return { ok: false, error: '模型文件不存在' };
+    const file = path.basename(full);
+    const base = file.replace(/_e\d+_s\d+\.pth$/i, '').replace(/\.pth$/i, '');
+    const deleted = [];
+    let bytes = 0;
+    const del = (p) => {
+      try {
+        const st = fs.statSync(p);
+        fs.rmSync(p, { force: true });
+        bytes += st.size;
+        deleted.push(path.basename(p));
+      } catch (_) {}
+    };
+    del(full);
+    if (fs.existsSync(idir)) {
+      for (const f of fs.readdirSync(idir)) {
+        if (!f.toLowerCase().endsWith('.index')) continue;
+        if (f.toLowerCase().startsWith(base.toLowerCase())) del(path.join(idir, f));
+      }
+    }
+    return { ok: true, deleted, freedMB: +(bytes / 1048576).toFixed(1), base };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+});
 
 ipcMain.handle('rvc:prune', () => {
   try {

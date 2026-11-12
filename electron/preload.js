@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('api', {
   profileAnalyze: (payload) => ipcRenderer.invoke('profile:analyze', payload),
   rvcInfo: () => ipcRenderer.invoke('rvc:info'),
   rvcPrune: () => ipcRenderer.invoke('rvc:prune'),
+  rvcDelete: (payload) => ipcRenderer.invoke('rvc:delete', payload),
   rvcConvert: (payload) => ipcRenderer.invoke('rvc:convert', payload),
   rvcCancel: () => ipcRenderer.invoke('rvc:cancel'),
   bookDetail: (payload) => ipcRenderer.invoke('book:detail', payload),
